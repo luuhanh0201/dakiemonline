@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "boss": {
+    "id": "boss.thu",
+    "status": "THU",
+    "source": "SPEC-0.5 buoc 5, GDD 19.4",
+    "maxHp": 5000,
+    "defense": 0,
+    "width": 2,
+    "height": 2.5,
+    "moveSpeed": 1.5,
+    "startDistance": 8,
+    "enrageHpPercent": 50,
+    "enrageRestPercent": 75,
+    "cycle": ["boss.chem", "boss.chem", "boss.quet", "boss.chem", "boss.don_lon"]
+  },
+  "attacks": [
+    {
+      "id": "boss.chem",
+      "status": "THU",
+      "source": "SPEC-0.5 buoc 5",
+      "shape": "front",
+      "warningSec": 0.6,
+      "width": 2.5,
+      "height": 1.5,
+      "damage": 120,
+      "restSec": 0.8,
+      "approachRange": 2
+    },
+    {
+      "id": "boss.quet",
+      "status": "DE_XUAT",
+      "source": "SPEC-0.5 buoc 5; sideDelaySec la de xuat vi dac ta chi ghi lan luot",
+      "shape": "both_sides",
+      "warningSec": 0.8,
+      "width": 6,
+      "height": 1,
+      "damage": 250,
+      "restSec": 1.2,
+      "sideDelaySec": 0.2
+    },
+    {
+      "id": "boss.don_lon",
+      "status": "DE_XUAT",
+      "source": "SPEC-0.5 buoc 5; height la de xuat, bang chieu cao tuong map thu",
+      "shape": "column",
+      "warningSec": 1,
+      "width": 3,
+      "height": 20,
+      "damage": 400,
+      "restSec": 2
+    }
+  ]
+}

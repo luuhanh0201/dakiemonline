@@ -142,6 +142,24 @@ namespace Game.Rules
             return items;
         }
 
+        public IReadOnlyList<string> Strings(string name)
+        {
+            JsonNode array = Field(name, JsonKind.Array, "an array");
+            var items = new List<string>(array.Items.Count);
+
+            foreach (JsonNode item in array.Items)
+            {
+                if (item.Kind != JsonKind.String)
+                {
+                    throw Fail(name, "must contain only strings");
+                }
+
+                items.Add(item.Text);
+            }
+
+            return items;
+        }
+
         public InvalidConfigException Fail(string name, string problem)
         {
             return new InvalidConfigException(file, $"{path}.{name}", problem);

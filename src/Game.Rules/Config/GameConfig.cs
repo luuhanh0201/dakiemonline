@@ -13,6 +13,7 @@ namespace Game.Rules
         public const string MapFile = "map.test.json";
         public const string SkillsFile = "skills.thuy.json";
         public const string ItemsFile = "items.json";
+        public const string BossFile = "boss.json";
 
         private const int SupportedVersion = 1;
         private const decimal WholePercent = 100m;
@@ -36,18 +37,27 @@ namespace Game.Rules
             ["optionB"] = SkillSlot.OptionB,
         };
 
+        private static readonly Dictionary<string, BossAttackShape> Shapes = new Dictionary<string, BossAttackShape>
+        {
+            ["front"] = BossAttackShape.Front,
+            ["both_sides"] = BossAttackShape.BothSides,
+            ["column"] = BossAttackShape.Column,
+        };
+
         private GameConfig(
             CharacterConfig character,
             MovementConfig movement,
             IReadOnlyList<MapBox> mapBoxes,
             IReadOnlyList<SkillConfig> skills,
-            PotionConfig potion)
+            PotionConfig potion,
+            BossConfig boss)
         {
             Character = character;
             Movement = movement;
             MapBoxes = mapBoxes;
             Skills = skills;
             Potion = potion;
+            Boss = boss;
         }
 
         public static IReadOnlyList<string> FileNames { get; } = new[]
@@ -57,6 +67,7 @@ namespace Game.Rules
             MapFile,
             SkillsFile,
             ItemsFile,
+            BossFile,
         };
 
         public CharacterConfig Character { get; }
@@ -64,6 +75,7 @@ namespace Game.Rules
         public IReadOnlyList<MapBox> MapBoxes { get; }
         public IReadOnlyList<SkillConfig> Skills { get; }
         public PotionConfig Potion { get; }
+        public BossConfig Boss { get; }
 
         /// <summary>Takes the text of each file in <see cref="FileNames"/>, keyed by file name.</summary>
         public static GameConfig Parse(IReadOnlyDictionary<string, string> files)
@@ -73,7 +85,8 @@ namespace Game.Rules
                 ParseMovement(Open(files, MovementFile)),
                 ParseMap(Open(files, MapFile)),
                 ParseSkills(Open(files, SkillsFile)),
-                ParseItems(Open(files, ItemsFile)));
+                ParseItems(Open(files, ItemsFile)),
+                ParseBoss(Open(files, BossFile)));
         }
 
         public SkillConfig Skill(SkillSlot slot) => Skills.First(skill => skill.Slot == slot);
@@ -109,6 +122,86 @@ namespace Game.Rules
             item.RejectUnknownFields();
             root.RejectUnknownFields();
             return potion;
+        }
+
+        private static BossConfig ParseBoss(ConfigObject root)
+        {
+            var attacks = new Dictionary<string, BossAttackConfig>();
+
+            foreach (ConfigObject entry in root.Array("attacks"))
+            {
+                BossAttackConfig attack = ParseBossAttack(entry);
+
+                if (attacks.ContainsKey(attack.Id))
+                {
+                    throw entry.Fail("id", $"duplicate id '{attack.Id}'");
+                }
+
+                attacks[attack.Id] = attack;
+            }
+
+            ConfigObject item = root.Object("boss");
+            var boss = new BossConfig
+            {
+                MaxHp = PositiveInt(item, "maxHp"),
+                Defense = item.NotNegativeDecimal("defense"),
+                Width = item.Positive("width"),
+                Height = item.Positive("height"),
+                MoveSpeed = item.Positive("moveSpeed"),
+                StartDistance = item.Positive("startDistance"),
+                EnrageHpPercent = item.Percent("enrageHpPercent"),
+                EnrageRestPercent = item.Percent("enrageRestPercent"),
+                Cycle = ParseCycle(item, attacks),
+            };
+
+            ReadEntry(item, boss);
+            item.RejectUnknownFields();
+            root.RejectUnknownFields();
+            return boss;
+        }
+
+        private static IReadOnlyList<BossAttackConfig> ParseCycle(
+            ConfigObject item,
+            Dictionary<string, BossAttackConfig> attacks)
+        {
+            var cycle = new List<BossAttackConfig>();
+
+            foreach (string id in item.Strings("cycle"))
+            {
+                if (attacks.TryGetValue(id, out BossAttackConfig? attack) == false)
+                {
+                    throw item.Fail("cycle", $"unknown attack '{id}'");
+                }
+
+                cycle.Add(attack);
+            }
+
+            return cycle.Count > 0 ? cycle : throw item.Fail("cycle", "needs at least one attack");
+        }
+
+        private static BossAttackConfig ParseBossAttack(ConfigObject item)
+        {
+            var attack = new BossAttackConfig
+            {
+                Shape = Lookup(item, "shape", Shapes),
+                WarningSec = item.Positive("warningSec"),
+                Width = item.Positive("width"),
+                Height = item.Positive("height"),
+                Damage = PositiveInt(item, "damage"),
+                RestSec = item.NotNegative("restSec"),
+                ApproachRange = item.Has("approachRange") ? item.Positive("approachRange") : 0d,
+                SideDelaySec = item.Has("sideDelaySec") ? item.Positive("sideDelaySec") : 0d,
+            };
+
+            ReadEntry(item, attack);
+            item.RejectUnknownFields();
+
+            if ((attack.Shape == BossAttackShape.BothSides) != (attack.SideDelaySec > 0d))
+            {
+                throw item.Fail("sideDelaySec", "is required for both_sides and only for it");
+            }
+
+            return attack;
         }
 
         private static CharacterConfig ParseCharacter(ConfigObject root)

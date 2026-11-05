@@ -61,6 +61,24 @@ namespace Game.Rules.Tests
             Assert.Contains(problem, Rejected(GameConfig.ItemsFile, find, replace).Message);
         }
 
+        [Theory]
+        [InlineData("\"maxHp\": 5000,", "", "missing field")]
+        [InlineData("\"maxHp\": 5000,", "\"maxHp\": 0,", "greater than 0")]
+        [InlineData("\"boss.don_lon\"]", "\"boss.khong_co\"]", "unknown attack")]
+        [InlineData("[\"boss.chem\", \"boss.chem\", \"boss.quet\", \"boss.chem\", \"boss.don_lon\"]", "[]", "at least one attack")]
+        [InlineData("\"boss.don_lon\"]", "1]", "only strings")]
+        [InlineData("\"id\": \"boss.quet\"", "\"id\": \"boss.chem\"", "duplicate id")]
+        [InlineData("\"shape\": \"column\"", "\"shape\": \"round\"", "not one of")]
+        [InlineData("\"warningSec\": 0.6", "\"warningSec\": 0", "greater than 0")]
+        [InlineData("\"sideDelaySec\": 0.2", "\"approachRange\": 2", "required for both_sides")]
+        [InlineData("\"restSec\": 2", "\"restSec\": 2, \"sideDelaySec\": 1", "only for it")]
+        [InlineData("\"enrageRestPercent\": 75", "\"enrageRestPercent\": 175", "from 0 to 100")]
+        [InlineData("\"restSec\": 2", "\"restSec\": 2, \"note\": 1", "unknown field")]
+        public void BadBossIsRejected(string find, string replace, string problem)
+        {
+            Assert.Contains(problem, Rejected(GameConfig.BossFile, find, replace).Message);
+        }
+
         [Fact]
         public void CharacterMatchesFixture()
         {
