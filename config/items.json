@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "potion": {
+    "id": "item.thuoc_hoi_mau",
+    "status": "THU",
+    "source": "SPEC-0.5 buoc 4, GDD 19.4",
+    "healHp": 300,
+    "charges": 5,
+    "cooldownSec": 5
+  }
+}

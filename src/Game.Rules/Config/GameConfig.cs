@@ -12,6 +12,7 @@ namespace Game.Rules
         public const string MovementFile = "movement.json";
         public const string MapFile = "map.test.json";
         public const string SkillsFile = "skills.thuy.json";
+        public const string ItemsFile = "items.json";
 
         private const int SupportedVersion = 1;
         private const decimal WholePercent = 100m;
@@ -39,12 +40,14 @@ namespace Game.Rules
             CharacterConfig character,
             MovementConfig movement,
             IReadOnlyList<MapBox> mapBoxes,
-            IReadOnlyList<SkillConfig> skills)
+            IReadOnlyList<SkillConfig> skills,
+            PotionConfig potion)
         {
             Character = character;
             Movement = movement;
             MapBoxes = mapBoxes;
             Skills = skills;
+            Potion = potion;
         }
 
         public static IReadOnlyList<string> FileNames { get; } = new[]
@@ -53,12 +56,14 @@ namespace Game.Rules
             MovementFile,
             MapFile,
             SkillsFile,
+            ItemsFile,
         };
 
         public CharacterConfig Character { get; }
         public MovementConfig Movement { get; }
         public IReadOnlyList<MapBox> MapBoxes { get; }
         public IReadOnlyList<SkillConfig> Skills { get; }
+        public PotionConfig Potion { get; }
 
         /// <summary>Takes the text of each file in <see cref="FileNames"/>, keyed by file name.</summary>
         public static GameConfig Parse(IReadOnlyDictionary<string, string> files)
@@ -67,8 +72,11 @@ namespace Game.Rules
                 ParseCharacter(Open(files, CharacterFile)),
                 ParseMovement(Open(files, MovementFile)),
                 ParseMap(Open(files, MapFile)),
-                ParseSkills(Open(files, SkillsFile)));
+                ParseSkills(Open(files, SkillsFile)),
+                ParseItems(Open(files, ItemsFile)));
         }
+
+        public SkillConfig Skill(SkillSlot slot) => Skills.First(skill => skill.Slot == slot);
 
         private static ConfigObject Open(IReadOnlyDictionary<string, string> files, string name)
         {
@@ -85,6 +93,22 @@ namespace Game.Rules
             }
 
             return root;
+        }
+
+        private static PotionConfig ParseItems(ConfigObject root)
+        {
+            ConfigObject item = root.Object("potion");
+            var potion = new PotionConfig
+            {
+                HealHp = PositiveInt(item, "healHp"),
+                Charges = PositiveInt(item, "charges"),
+                CooldownSec = item.NotNegative("cooldownSec"),
+            };
+
+            ReadEntry(item, potion);
+            item.RejectUnknownFields();
+            root.RejectUnknownFields();
+            return potion;
         }
 
         private static CharacterConfig ParseCharacter(ConfigObject root)

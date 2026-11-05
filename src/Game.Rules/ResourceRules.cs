@@ -70,6 +70,11 @@ namespace Game.Rules
         public static void Heal(ResourceState resources, SkillHeal heal, CharacterConfig character)
         {
             int amount = (int)Math.Floor(heal.Base + character.MaxHp * heal.MaxHpPercent / 100m);
+            Heal(resources, amount, character);
+        }
+
+        public static void Heal(ResourceState resources, int amount, CharacterConfig character)
+        {
             resources.Hp = Math.Min(character.MaxHp, resources.Hp + amount);
         }
 

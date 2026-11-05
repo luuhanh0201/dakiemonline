@@ -42,6 +42,26 @@ namespace Game.Rules.Tests
         }
 
         [Fact]
+        public void PotionMatchesSpec()
+        {
+            PotionConfig potion = TestConfig.Load().Potion;
+
+            Assert.Equal(300, potion.HealHp);
+            Assert.Equal(5, potion.Charges);
+            Assert.Equal(5d, potion.CooldownSec);
+        }
+
+        [Theory]
+        [InlineData("\"healHp\": 300,", "", "missing field")]
+        [InlineData("\"charges\": 5", "\"charges\": 0", "greater than 0")]
+        [InlineData("\"cooldownSec\": 5", "\"cooldownSec\": -5", "cannot be negative")]
+        [InlineData("\"charges\": 5", "\"charges\": 5, \"name\": 1", "unknown field")]
+        public void BadPotionIsRejected(string find, string replace, string problem)
+        {
+            Assert.Contains(problem, Rejected(GameConfig.ItemsFile, find, replace).Message);
+        }
+
+        [Fact]
         public void CharacterMatchesFixture()
         {
             CharacterConfig character = TestConfig.Load().Character;

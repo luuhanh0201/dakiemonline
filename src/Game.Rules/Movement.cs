@@ -20,6 +20,29 @@ namespace Game.Rules
         public bool DashPressed { get; }
     }
 
+    /// <summary>What a skill being cast allows the character to do this tick.</summary>
+    public readonly struct MovementLimits
+    {
+        public MovementLimits(double speedFactor, bool canJump, bool canDash, bool lockFacing, double forcedDeltaX)
+        {
+            SpeedFactor = speedFactor;
+            CanJump = canJump;
+            CanDash = canDash;
+            LockFacing = lockFacing;
+            ForcedDeltaX = forcedDeltaX;
+        }
+
+        public static MovementLimits Free => new MovementLimits(1d, true, true, false, 0d);
+
+        public double SpeedFactor { get; }
+        public bool CanJump { get; }
+        public bool CanDash { get; }
+        public bool LockFacing { get; }
+
+        /// <summary>Distance the skill itself moves the body this tick, replacing joystick movement.</summary>
+        public double ForcedDeltaX { get; }
+    }
+
     public sealed class MovementState
     {
         public MovementState(double x, double y, double stamina)
@@ -60,16 +83,34 @@ namespace Game.Rules
             MovementConfig config,
             CollisionMap map)
         {
+            Step(state, intent, config, map, MovementLimits.Free);
+        }
+
+        public static void Step(
+            MovementState state,
+            in MovementIntent intent,
+            MovementConfig config,
+            CollisionMap map,
+            in MovementLimits limits)
+        {
             BufferInput(state, intent, config);
 
-            if (!state.IsDashing && intent.MoveX != 0d)
+            if (!state.IsDashing && intent.MoveX != 0d && !limits.LockFacing)
             {
                 state.Facing = Math.Sign(intent.MoveX);
             }
 
-            TryStartDash(state, intent, config);
-            TryJump(state, config);
-            MoveHorizontally(state, intent, config, map);
+            if (limits.CanDash)
+            {
+                TryStartDash(state, intent, config);
+            }
+
+            if (limits.CanJump)
+            {
+                TryJump(state, config);
+            }
+
+            MoveHorizontally(state, intent, config, map, limits);
             MoveVertically(state, config, map);
         }
 
@@ -128,7 +169,8 @@ namespace Game.Rules
             MovementState state,
             in MovementIntent intent,
             MovementConfig config,
-            CollisionMap map)
+            CollisionMap map,
+            in MovementLimits limits)
         {
             double deltaX;
 
@@ -136,11 +178,15 @@ namespace Game.Rules
             {
                 deltaX = state.DashDirection * config.DashDistance / Ticks.FromSeconds(config.DashDurationSec);
             }
+            else if (limits.ForcedDeltaX != 0d)
+            {
+                deltaX = limits.ForcedDeltaX;
+            }
             else
             {
                 double tilt = Math.Abs(intent.MoveX);
                 double speed = tilt < config.WalkTiltBelow ? config.WalkSpeed : config.RunSpeed;
-                deltaX = Math.Sign(intent.MoveX) * speed * Ticks.DeltaSeconds;
+                deltaX = Math.Sign(intent.MoveX) * speed * limits.SpeedFactor * Ticks.DeltaSeconds;
             }
 
             double target = state.X + deltaX;
