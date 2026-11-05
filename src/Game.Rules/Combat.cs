@@ -104,6 +104,7 @@ namespace Game.Rules
         public double Y { get; }
 
         public int Direction { get; }
+        public double Width => Config.Width;
 
         internal SkillSlot Slot { get; }
         internal SkillProjectile Config { get; }
@@ -202,6 +203,31 @@ namespace Game.Rules
             AdvanceCast(combat, movement, resources, config, target, events);
             MoveProjectiles(combat, config, target, events);
             ResourceRules.Step(resources, movement, moveIntent, attacking, config.Character, config.Movement);
+        }
+
+        /// <summary>False while the button should be dimmed: on cooldown or short of energy.</summary>
+        public static bool IsSkillReady(CombatState combat, ResourceState resources, SkillConfig skill)
+        {
+            return combat.CooldownSecondsLeft(skill.Slot) == 0d
+                && ResourceRules.CanAfford(resources, skill.EnergyCost);
+        }
+
+        public static bool IsPotionReady(CombatState combat)
+        {
+            return combat.PotionsLeft > 0 && combat.PotionCooldownTicks == 0;
+        }
+
+        /// <summary>The area the current skill can hit this tick, or null outside its active phase.</summary>
+        public static CombatBox? ActiveHitbox(CombatState combat, MovementState movement)
+        {
+            SkillConfig? skill = combat.Casting;
+
+            if (skill?.Hitbox == null || combat.Phase != CastPhase.Active)
+            {
+                return null;
+            }
+
+            return HitboxOf(combat, movement, skill);
         }
 
         private static void CoolDown(CombatState combat)

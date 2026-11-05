@@ -21,6 +21,7 @@ namespace DaKiem.Client
         private static readonly Color Moon = new Color32(0xDC, 0xE6, 0xFF, 0xC0);
         private static readonly Color Panel = new Color32(0x14, 0x1B, 0x3A, 0x9E);
         private static readonly Color Pressed = new Color32(0x74, 0x80, 0xC8, 0xD0);
+        private static readonly Color Dimmed = new Color(1f, 1f, 1f, 0.35f);
         private static readonly Color HealthColor = new Color32(0x46, 0xB3, 0x7E, 0xFF);
         private static readonly Color EnergyColor = new Color32(0x4F, 0x7B, 0xE8, 0xFF);
         private static readonly Color StaminaColor = new Color32(0xF2, 0xC7, 0x6E, 0xFF);
@@ -28,6 +29,8 @@ namespace DaKiem.Client
 
         private readonly Dictionary<HudButton, Image> buttonImages = new Dictionary<HudButton, Image>();
         private readonly Dictionary<HudButton, float> flashUntil = new Dictionary<HudButton, float>();
+        private readonly Dictionary<HudButton, Text> buttonLabels = new Dictionary<HudButton, Text>();
+        private readonly HashSet<HudButton> dimmedButtons = new HashSet<HudButton>();
         private readonly RectTransform root;
         private readonly RectTransform healthFill;
         private readonly RectTransform energyFill;
@@ -82,6 +85,28 @@ namespace DaKiem.Client
             flashUntil[button] = Time.unscaledTime + FlashSeconds;
         }
 
+        /// <summary>Sets what a button says and whether it looks unavailable.</summary>
+        public void SetButton(HudButton button, string label, bool dimmed)
+        {
+            Text text = buttonLabels[button];
+
+            if (text.text != label)
+            {
+                text.text = label;
+            }
+
+            text.color = dimmed ? Dimmed : Color.white;
+
+            if (dimmed)
+            {
+                dimmedButtons.Add(button);
+            }
+            else
+            {
+                dimmedButtons.Remove(button);
+            }
+        }
+
         public void ShowJoystick(bool active, Vector2 originScreen, Vector2 knobOffsetScreen)
         {
             joystickBase.gameObject.SetActive(active);
@@ -101,7 +126,7 @@ namespace DaKiem.Client
             foreach (KeyValuePair<HudButton, Image> pair in buttonImages)
             {
                 bool flashing = flashUntil.TryGetValue(pair.Key, out float until) && Time.unscaledTime < until;
-                pair.Value.color = flashing ? Pressed : Color.white;
+                pair.Value.color = dimmedButtons.Contains(pair.Key) ? Dimmed : flashing ? Pressed : Color.white;
             }
         }
 
@@ -159,6 +184,7 @@ namespace DaKiem.Client
             text.color = Color.white;
             text.text = spec.Label;
             text.raycastTarget = false;
+            buttonLabels[spec.Button] = text;
         }
 
         private RectTransform CreateDiscObject(string name, float diameterDp, Color color)

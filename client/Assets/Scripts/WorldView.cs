@@ -18,9 +18,11 @@ namespace DaKiem.Client
         private static readonly Color PlatformColor = new Color32(0x74, 0x80, 0xC8, 0xFF);
         private static readonly Color BodyColor = new Color32(0x3D, 0x8B, 0xF2, 0xFF);
         private static readonly Color FaceColor = new Color32(0xDC, 0xE6, 0xFF, 0xFF);
+        private static readonly Color WindupColor = new Color32(0x9C, 0xC4, 0xFA, 0xFF);
 
         private readonly Sprite square;
         private readonly Camera camera;
+        private readonly SpriteRenderer bodyRenderer;
         private readonly Transform body;
         private readonly Transform face;
         private readonly float bodyHeight;
@@ -39,6 +41,7 @@ namespace DaKiem.Client
             }
 
             body = CreateBlock("Body", BodyColor, 1, new Vector2(bodyWidth, bodyHeight)).transform;
+            bodyRenderer = body.GetComponent<SpriteRenderer>();
             face = CreateBlock("Face", FaceColor, 2, new Vector2(bodyWidth / 3f, bodyHeight / 3f)).transform;
 
             camera.backgroundColor = SkyColor;
@@ -46,8 +49,9 @@ namespace DaKiem.Client
             camera.transform.position = new Vector3(ViewWidth / 2f, camera.orthographicSize - GroundMargin, -10f);
         }
 
-        public void Show(Vector2 feet, int facing)
+        public void Show(Vector2 feet, int facing, CastPhase phase)
         {
+            bodyRenderer.color = phase == CastPhase.Windup ? WindupColor : BodyColor;
             body.position = new Vector3(feet.x, feet.y + bodyHeight / 2f, 0f);
             face.position = new Vector3(feet.x + facing * bodyWidth / 3f, feet.y + bodyHeight * 0.75f, 0f);
 
@@ -65,7 +69,7 @@ namespace DaKiem.Client
             block.transform.position = new Vector3((float)(box.MinX + box.MaxX) / 2f, (float)(box.MinY + box.MaxY) / 2f, 0f);
         }
 
-        private GameObject CreateBlock(string name, Color color, int order, Vector2 size)
+        public GameObject CreateBlock(string name, Color color, int order, Vector2 size)
         {
             var block = new GameObject(name);
             var renderer = block.AddComponent<SpriteRenderer>();

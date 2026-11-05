@@ -1,3 +1,4 @@
+using Game.Rules;
 using UnityEngine;
 
 namespace DaKiem.Client
@@ -62,5 +63,27 @@ namespace DaKiem.Client
         };
 
         public static float DpToPixels => (Screen.dpi > 0f ? Screen.dpi : BaselineDpi) / BaselineDpi;
+
+        /// <summary>The combat slot a button casts, or null for dash and potion.</summary>
+        public static SkillSlot? SlotOf(HudButton button)
+        {
+            switch (button)
+            {
+                case HudButton.Attack:
+                    return SkillSlot.Attack;
+                case HudButton.Ranged:
+                    return SkillSlot.Ranged;
+                case HudButton.SkillA:
+                    return SkillSlot.OptionA;
+                case HudButton.SkillB:
+                    return SkillSlot.OptionB;
+                case HudButton.Heal:
+                    return SkillSlot.Support;
+                case HudButton.Ultimate:
+                    return SkillSlot.Ultimate;
+                default:
+                    return null;
+            }
+        }
     }
 }

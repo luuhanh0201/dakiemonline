@@ -612,6 +612,84 @@ namespace Game.Rules.Tests
         }
 
         [Fact]
+        public void Ready_IsFalseDuringCooldown()
+        {
+            Fighter fighter = NewFighter();
+            SkillConfig skill = config.Skill(SkillSlot.Ranged);
+            Assert.True(Combat.IsSkillReady(fighter.Combat, fighter.Resources, skill));
+
+            Cast(fighter, SkillSlot.Ranged);
+
+            Assert.False(Combat.IsSkillReady(fighter.Combat, fighter.Resources, skill));
+        }
+
+        [Fact]
+        public void Ready_IsFalseWithoutEnoughEnergy()
+        {
+            Fighter fighter = NewFighter();
+            ResourceRules.TrySpendEnergy(fighter.Resources, 95);
+
+            Assert.False(Combat.IsSkillReady(fighter.Combat, fighter.Resources, config.Skill(SkillSlot.Ranged)));
+            Assert.True(Combat.IsSkillReady(fighter.Combat, fighter.Resources, config.Skill(SkillSlot.Attack)));
+        }
+
+        [Fact]
+        public void PotionReady_FollowsWaitAndBottles()
+        {
+            Fighter fighter = NewFighter();
+            Assert.True(Combat.IsPotionReady(fighter.Combat));
+
+            Tick(fighter, potion: true);
+            Assert.False(Combat.IsPotionReady(fighter.Combat));
+
+            Wait(fighter, Ticks(5d));
+            Assert.True(Combat.IsPotionReady(fighter.Combat));
+        }
+
+        [Fact]
+        public void ActiveHitbox_ShowsOnlyDuringTheActivePhase()
+        {
+            Fighter fighter = NewFighter();
+
+            Cast(fighter, SkillSlot.Attack);
+            Assert.Null(Combat.ActiveHitbox(fighter.Combat, fighter.Movement));
+
+            Wait(fighter, Ticks(0.15d) - 1);
+            CombatBox box = Combat.ActiveHitbox(fighter.Combat, fighter.Movement)!.Value;
+
+            Assert.Equal(StartX, box.MinX, Precision);
+            Assert.Equal(StartX + 1.5d, box.MaxX, Precision);
+            Assert.Equal(1d, box.MaxY, Precision);
+
+            Wait(fighter, Ticks(0.1d));
+            Assert.Null(Combat.ActiveHitbox(fighter.Combat, fighter.Movement));
+        }
+
+        [Fact]
+        public void ActiveHitbox_FollowsTheAim()
+        {
+            Fighter fighter = NewFighter();
+
+            Cast(fighter, SkillSlot.Attack, BossAt(StartX - 3d));
+            Wait(fighter, Ticks(0.15d) - 1);
+            CombatBox box = Combat.ActiveHitbox(fighter.Combat, fighter.Movement)!.Value;
+
+            Assert.Equal(StartX - 1.5d, box.MinX, Precision);
+            Assert.Equal(StartX, box.MaxX, Precision);
+        }
+
+        [Fact]
+        public void ActiveHitbox_IsEmptyForSkillsWithoutOne()
+        {
+            Fighter fighter = NewFighter();
+
+            Cast(fighter, SkillSlot.Ranged);
+            Wait(fighter, Ticks(0.2d));
+
+            Assert.Null(Combat.ActiveHitbox(fighter.Combat, fighter.Movement));
+        }
+
+        [Fact]
         public void SameIntents_GiveTheSameResult()
         {
             Fighter first = NewFighter();

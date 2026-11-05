@@ -1,3 +1,4 @@
+using Game.Rules;
 using UnityEngine;
 using UnityEngine.InputSystem.EnhancedTouch;
 using Touch = UnityEngine.InputSystem.EnhancedTouch.Touch;
@@ -15,6 +16,8 @@ namespace DaKiem.Client
         private int joystickFinger = NoFinger;
         private Vector2 joystickOrigin;
         private bool dashPressed;
+        private bool potionPressed;
+        private SkillSlot? skillPressed;
 
         public InputReader(HudView hud)
         {
@@ -54,6 +57,14 @@ namespace DaKiem.Client
             return pressed;
         }
 
+        public CombatIntent ConsumeCombat()
+        {
+            var intent = new CombatIntent(skillPressed, potionPressed);
+            skillPressed = null;
+            potionPressed = false;
+            return intent;
+        }
+
         private void BeginTouch(Touch touch)
         {
             bool onLeftHalf = touch.screenPosition.x < Screen.width / 2f;
@@ -79,6 +90,8 @@ namespace DaKiem.Client
 
             hud.Flash(button);
             dashPressed |= button == HudButton.Dash;
+            potionPressed |= button == HudButton.Potion;
+            skillPressed = HudLayout.SlotOf(button) ?? skillPressed;
         }
 
         private void MoveTouch(Touch touch)

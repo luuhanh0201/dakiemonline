@@ -14,11 +14,14 @@ namespace DaKiem.Client
         private InputReader input;
         private HudView hud;
         private WorldView view;
+        private FxView fx;
         private GameConfig config;
         private string configError;
         private CollisionMap map;
         private MovementState state;
         private ResourceState resources;
+        private CombatState combat;
+        private readonly List<CombatEvent> events = new List<CombatEvent>();
         private Vector2 previousFeet;
         private Vector2 currentFeet;
         private float accumulator;
@@ -49,8 +52,10 @@ namespace DaKiem.Client
             input = new InputReader(hud);
             map = new CollisionMap(config.MapBoxes);
             view = new WorldView(config.MapBoxes, config.Movement);
+            fx = new FxView(view);
             state = new MovementState(StartX, 0d, config.Character.MaxStamina);
             resources = new ResourceState(config.Character);
+            combat = new CombatState(config.Potion);
             previousFeet = currentFeet = ReadFeet();
         }
 
@@ -67,21 +72,50 @@ namespace DaKiem.Client
             while (accumulator >= Ticks.DeltaSeconds)
             {
                 var intent = new MovementIntent(input.MoveX, input.MoveY, input.ConsumeDash());
-                Movement.Step(state, intent, config.Movement, map);
-                ResourceRules.Step(resources, state, intent, false, config.Character, config.Movement);
+                CombatIntent combatIntent = input.ConsumeCombat();
+                Combat.Step(combat, state, resources, intent, combatIntent, config, map, null, events);
                 previousFeet = currentFeet;
                 currentFeet = ReadFeet();
                 accumulator -= (float)Ticks.DeltaSeconds;
             }
 
             float blend = accumulator / (float)Ticks.DeltaSeconds;
-            view.Show(Vector2.Lerp(previousFeet, currentFeet, blend), state.Facing);
+            view.Show(Vector2.Lerp(previousFeet, currentFeet, blend), state.Facing, combat.Phase);
+            fx.Show(combat, state, events);
+            events.Clear();
 
             CharacterConfig character = config.Character;
             hud.ShowResources(
                 (float)resources.Hp / character.MaxHp,
                 (float)(resources.Energy / character.MaxEnergy),
                 (float)(state.Stamina / character.MaxStamina));
+            ShowButtons();
+        }
+
+        private void ShowButtons()
+        {
+            foreach (HudButtonSpec spec in HudLayout.Buttons)
+            {
+                SkillSlot? slot = HudLayout.SlotOf(spec.Button);
+
+                if (slot != null)
+                {
+                    double left = combat.CooldownSecondsLeft(slot.Value);
+                    bool ready = Combat.IsSkillReady(combat, resources, config.Skill(slot.Value));
+                    hud.SetButton(spec.Button, left > 0d ? WholeSeconds(left) : spec.Label, !ready);
+                }
+                else if (spec.Button == HudButton.Potion)
+                {
+                    double left = combat.PotionCooldownSecondsLeft;
+                    string label = left > 0d ? WholeSeconds(left) : $"{spec.Label}\n{combat.PotionsLeft}";
+                    hud.SetButton(spec.Button, label, !Combat.IsPotionReady(combat));
+                }
+            }
+        }
+
+        private static string WholeSeconds(double seconds)
+        {
+            return Mathf.CeilToInt((float)seconds).ToString();
         }
 
         private void OnGUI()

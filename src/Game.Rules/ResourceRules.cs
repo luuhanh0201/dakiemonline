@@ -44,10 +44,15 @@ namespace Game.Rules
             movement.Stamina = Math.Min(character.MaxStamina, movement.Stamina + perSecond * Ticks.DeltaSeconds);
         }
 
+        public static bool CanAfford(ResourceState resources, int cost)
+        {
+            return resources.Energy + RoundingTolerance >= cost;
+        }
+
         /// <summary>Spends the cost only if all of it is available.</summary>
         public static bool TrySpendEnergy(ResourceState resources, int cost)
         {
-            if (resources.Energy + RoundingTolerance < cost)
+            if (!CanAfford(resources, cost))
             {
                 return false;
             }
