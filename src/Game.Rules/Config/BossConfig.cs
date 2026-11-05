@@ -17,6 +17,9 @@ namespace Game.Rules
 
     public sealed class BossAttackConfig : ConfigEntry
     {
+        /// <summary>Shown on the end screen.</summary>
+        public string Name { get; set; } = string.Empty;
+
         public BossAttackShape Shape { get; set; }
         public double WarningSec { get; set; }
         public double Width { get; set; }

@@ -183,6 +183,7 @@ namespace Game.Rules
         {
             var attack = new BossAttackConfig
             {
+                Name = item.String("name"),
                 Shape = Lookup(item, "shape", Shapes),
                 WarningSec = item.Positive("warningSec"),
                 Width = item.Positive("width"),

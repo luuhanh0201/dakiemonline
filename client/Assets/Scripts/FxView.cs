@@ -8,36 +8,53 @@ namespace DaKiem.Client
     public sealed class FxView
     {
         private const int SortingOrder = 3;
+        private const int WarningOrder = 4;
+        private const float HurtFlashSeconds = 0.2f;
         private const float HealFlashSeconds = 0.3f;
         private const float HealFlashSize = 1.6f;
 
         private static readonly Color HitColor = new Color32(0x3D, 0x8B, 0xF2, 0x80);
         private static readonly Color ProjectileColor = new Color32(0x9C, 0xC4, 0xFA, 0xFF);
         private static readonly Color HealColor = new Color32(0x46, 0xB3, 0x7E, 0x80);
+        private static readonly Color WarningColor = new Color32(0xD9, 0x4F, 0x4F, 0x70);
 
         private readonly WorldView world;
         private readonly Transform hitArea;
         private readonly Transform healFlash;
+        private readonly Transform warningZone;
         private readonly List<Transform> projectiles = new List<Transform>();
         private float healFlashUntil;
+        private float hurtFlashUntil;
 
         public FxView(WorldView world)
         {
             this.world = world;
             hitArea = world.CreateBlock("HitArea", HitColor, SortingOrder, Vector2.one).transform;
             healFlash = world.CreateBlock("HealFlash", HealColor, SortingOrder, Vector2.one * HealFlashSize).transform;
+            warningZone = world.CreateBlock("WarningZone", WarningColor, WarningOrder, Vector2.one).transform;
         }
 
-        public void Show(CombatState combat, MovementState movement, List<CombatEvent> events)
+        public bool PlayerHurt => Time.unscaledTime < hurtFlashUntil;
+
+        public void Show(Simulation fight, BossConfig boss)
         {
-            ShowHitArea(Combat.ActiveHitbox(combat, movement));
-            ShowProjectiles(combat.Projectiles);
-            ShowHealFlash(movement, events);
+            ShowBox(hitArea, Combat.ActiveHitbox(fight.Combat, fight.Player));
+            ShowBox(warningZone, BossAi.WarningZone(fight.Boss, boss));
+            ShowProjectiles(fight.Combat.Projectiles);
+            ShowHealFlash(fight.Player, fight.CombatEvents);
+
+            foreach (BossEvent item in fight.BossEvents)
+            {
+                if (item.Kind == BossEventKind.PlayerHit)
+                {
+                    hurtFlashUntil = Time.unscaledTime + HurtFlashSeconds;
+                }
+            }
         }
 
-        private void ShowHitArea(CombatBox? box)
+        private static void ShowBox(Transform block, CombatBox? box)
         {
-            hitArea.gameObject.SetActive(box != null);
+            block.gameObject.SetActive(box != null);
 
             if (box == null)
             {
@@ -45,8 +62,8 @@ namespace DaKiem.Client
             }
 
             CombatBox area = box.Value;
-            hitArea.position = new Vector3((float)(area.MinX + area.MaxX) / 2f, (float)(area.MinY + area.MaxY) / 2f, 0f);
-            hitArea.localScale = new Vector3((float)(area.MaxX - area.MinX), (float)(area.MaxY - area.MinY), 1f);
+            block.position = new Vector3((float)(area.MinX + area.MaxX) / 2f, (float)(area.MinY + area.MaxY) / 2f, 0f);
+            block.localScale = new Vector3((float)(area.MaxX - area.MinX), (float)(area.MaxY - area.MinY), 1f);
         }
 
         private void ShowProjectiles(IReadOnlyList<Projectile> flying)
@@ -71,7 +88,7 @@ namespace DaKiem.Client
             }
         }
 
-        private void ShowHealFlash(MovementState movement, List<CombatEvent> events)
+        private void ShowHealFlash(MovementState movement, IReadOnlyList<CombatEvent> events)
         {
             foreach (CombatEvent item in events)
             {

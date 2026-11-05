@@ -41,7 +41,7 @@ namespace DaKiem.Client
                 normal = { textColor = Color.white },
             };
 
-            GUI.Label(new Rect(Screen.width * 0.3f, 60f, Screen.width, Screen.height / 8f), $"FPS {fps}", style);
+            GUI.Label(new Rect(Screen.width * 0.3f, Screen.height / 12f, Screen.width, Screen.height / 8f), $"FPS {fps}", style);
         }
     }
 }

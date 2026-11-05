@@ -17,6 +17,7 @@
   "attacks": [
     {
       "id": "boss.chem",
+      "name": "Chém",
       "status": "THU",
       "source": "SPEC-0.5 buoc 5",
       "shape": "front",
@@ -29,6 +30,7 @@
     },
     {
       "id": "boss.quet",
+      "name": "Quét",
       "status": "DE_XUAT",
       "source": "SPEC-0.5 buoc 5; sideDelaySec la de xuat vi dac ta chi ghi lan luot",
       "shape": "both_sides",
@@ -41,6 +43,7 @@
     },
     {
       "id": "boss.don_lon",
+      "name": "Đòn lớn",
       "status": "DE_XUAT",
       "source": "SPEC-0.5 buoc 5; height la de xuat, bang chieu cao tuong map thu",
       "shape": "column",

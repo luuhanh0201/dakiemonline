@@ -100,6 +100,7 @@ namespace Game.Rules.Tests
         {
             BossAttackConfig attack = config.Boss.Cycle.First(item => item.Id == id);
 
+            Assert.False(string.IsNullOrWhiteSpace(attack.Name));
             Assert.Equal(warning, attack.WarningSec);
             Assert.Equal(width, attack.Width);
             Assert.Equal(height, attack.Height);

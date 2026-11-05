@@ -17,6 +17,14 @@ namespace DaKiem.Client
         private const float EdgeDp = 16f;
         private const float BarGapDp = 6f;
         private const int LabelSizeDp = 13;
+        private const float BossBarWidthDp = 300f;
+        private const float BossBarHeightDp = 10f;
+        private const float EndPanelWidthDp = 320f;
+        private const float EndPanelHeightDp = 250f;
+        private const float ReplayWidthDp = 160f;
+        private const float ReplayHeightDp = 56f;
+        private const int EndTitleSizeDp = 28;
+        private const int EndBodySizeDp = 16;
 
         private static readonly Color Moon = new Color32(0xDC, 0xE6, 0xFF, 0xC0);
         private static readonly Color Panel = new Color32(0x14, 0x1B, 0x3A, 0x9E);
@@ -26,6 +34,8 @@ namespace DaKiem.Client
         private static readonly Color EnergyColor = new Color32(0x4F, 0x7B, 0xE8, 0xFF);
         private static readonly Color StaminaColor = new Color32(0xF2, 0xC7, 0x6E, 0xFF);
         private static readonly Color AccentColor = new Color32(0x3D, 0x8B, 0xF2, 0xFF);
+        private static readonly Color BossHealthColor = new Color32(0xD9, 0x4F, 0x4F, 0xFF);
+        private static readonly Color EndPanelColor = new Color32(0x14, 0x1B, 0x3A, 0xF0);
 
         private readonly Dictionary<HudButton, Image> buttonImages = new Dictionary<HudButton, Image>();
         private readonly Dictionary<HudButton, float> flashUntil = new Dictionary<HudButton, float>();
@@ -35,6 +45,11 @@ namespace DaKiem.Client
         private readonly RectTransform healthFill;
         private readonly RectTransform energyFill;
         private readonly RectTransform staminaFill;
+        private readonly RectTransform bossHealthFill;
+        private readonly GameObject endPanel;
+        private readonly Text endTitle;
+        private readonly Text endBody;
+        private readonly RectTransform replayButton;
         private readonly RectTransform joystickBase;
         private readonly RectTransform joystickKnob;
         private readonly Sprite disc;
@@ -60,6 +75,42 @@ namespace DaKiem.Client
             joystickBase = CreateDiscObject("JoystickBase", HudLayout.JoystickDiameterDp, new Color(1f, 1f, 1f, 0.45f));
             joystickKnob = CreateDiscObject("JoystickKnob", HudLayout.JoystickDiameterDp * 0.4f, new Color(1f, 1f, 1f, 0.85f));
             ShowJoystick(false, Vector2.zero, Vector2.zero);
+
+            bossHealthFill = CreateBossBar();
+
+            RectTransform panel = CreateImage("EndPanel", root, EndPanelColor, solid, new Vector2(EndPanelWidthDp, EndPanelHeightDp));
+            endPanel = panel.gameObject;
+            endTitle = CreateLabel("Title", panel, new Vector2(EndPanelWidthDp, 44f), new Vector2(0f, 90f), EndTitleSizeDp);
+            endBody = CreateLabel("Body", panel, new Vector2(EndPanelWidthDp, 110f), new Vector2(0f, 8f), EndBodySizeDp);
+
+            replayButton = CreateImage("Replay", panel, AccentColor, solid, new Vector2(ReplayWidthDp, ReplayHeightDp));
+            replayButton.anchoredPosition = new Vector2(0f, -85f);
+            CreateLabel("Label", replayButton, new Vector2(ReplayWidthDp, ReplayHeightDp), Vector2.zero, EndBodySizeDp).text = "Chơi lại";
+            endPanel.SetActive(false);
+        }
+
+        public bool EndScreenVisible => endPanel.activeSelf;
+
+        public bool ReplayButtonAt(Vector2 screenPosition)
+        {
+            return RectTransformUtility.RectangleContainsScreenPoint(replayButton, screenPosition, null);
+        }
+
+        public void ShowEndScreen(string title, string body)
+        {
+            endTitle.text = title;
+            endBody.text = body;
+            endPanel.SetActive(true);
+        }
+
+        public void HideEndScreen()
+        {
+            endPanel.SetActive(false);
+        }
+
+        public void ShowBossHealth(float health)
+        {
+            SetFill(bossHealthFill, BossBarWidthDp, health);
         }
 
         public HudButton ButtonAt(Vector2 screenPosition)
@@ -163,6 +214,37 @@ namespace DaKiem.Client
             return fill;
         }
 
+        private RectTransform CreateBossBar()
+        {
+            var size = new Vector2(BossBarWidthDp, BossBarHeightDp);
+
+            RectTransform back = CreateImage("BossBarBack", root, Panel, solid, size);
+            back.anchorMin = back.anchorMax = back.pivot = new Vector2(0.5f, 1f);
+            back.anchoredPosition = new Vector2(0f, -EdgeDp);
+
+            RectTransform fill = CreateImage("BossBarFill", back, BossHealthColor, solid, size);
+            fill.anchorMin = fill.anchorMax = fill.pivot = new Vector2(0f, 0.5f);
+            fill.anchoredPosition = Vector2.zero;
+            return fill;
+        }
+
+        private static Text CreateLabel(string name, RectTransform parent, Vector2 size, Vector2 position, int fontSize)
+        {
+            var label = new GameObject(name, typeof(RectTransform), typeof(Text));
+            var rect = (RectTransform)label.transform;
+            rect.SetParent(parent, false);
+            rect.sizeDelta = size;
+            rect.anchoredPosition = position;
+
+            var text = label.GetComponent<Text>();
+            text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            text.fontSize = fontSize;
+            text.alignment = TextAnchor.MiddleCenter;
+            text.color = Color.white;
+            text.raycastTarget = false;
+            return text;
+        }
+
         private void CreateButton(HudButtonSpec spec)
         {
             Sprite sprite = spec.Button == HudButton.Attack ? attackDisc : disc;
@@ -172,18 +254,8 @@ namespace DaKiem.Client
             button.anchoredPosition = spec.CentreDp;
             buttonImages[spec.Button] = button.GetComponent<Image>();
 
-            var label = new GameObject("Label", typeof(RectTransform), typeof(Text));
-            var labelRect = (RectTransform)label.transform;
-            labelRect.SetParent(button, false);
-            labelRect.sizeDelta = size;
-
-            var text = label.GetComponent<Text>();
-            text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            text.fontSize = LabelSizeDp;
-            text.alignment = TextAnchor.MiddleCenter;
-            text.color = Color.white;
+            Text text = CreateLabel("Label", button, size, Vector2.zero, LabelSizeDp);
             text.text = spec.Label;
-            text.raycastTarget = false;
             buttonLabels[spec.Button] = text;
         }
 

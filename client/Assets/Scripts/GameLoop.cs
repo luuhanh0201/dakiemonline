@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
 using Game.Rules;
 using UnityEngine;
 
@@ -14,16 +15,15 @@ namespace DaKiem.Client
         private InputReader input;
         private HudView hud;
         private WorldView view;
+        private BossView bossView;
         private FxView fx;
         private GameConfig config;
         private string configError;
-        private CollisionMap map;
-        private MovementState state;
-        private ResourceState resources;
-        private CombatState combat;
-        private readonly List<CombatEvent> events = new List<CombatEvent>();
+        private Simulation fight;
         private Vector2 previousFeet;
         private Vector2 currentFeet;
+        private float previousBossX;
+        private float currentBossX;
         private float accumulator;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -32,8 +32,18 @@ namespace DaKiem.Client
             new GameObject(nameof(GameLoop)).AddComponent<GameLoop>();
         }
 
+        private void OnApplicationFocus(bool hasFocus)
+        {
+            if (hasFocus)
+            {
+                AndroidImmersive.Apply();
+            }
+        }
+
         private IEnumerator Start()
         {
+            AndroidImmersive.Apply();
+
             var files = new Dictionary<string, string>();
             yield return ConfigFiles.LoadAll(files);
 
@@ -50,50 +60,90 @@ namespace DaKiem.Client
 
             hud = new HudView();
             input = new InputReader(hud);
-            map = new CollisionMap(config.MapBoxes);
             view = new WorldView(config.MapBoxes, config.Movement);
+            bossView = new BossView(view, config.Boss);
             fx = new FxView(view);
-            state = new MovementState(StartX, 0d, config.Character.MaxStamina);
-            resources = new ResourceState(config.Character);
-            combat = new CombatState(config.Potion);
+            StartFight();
+        }
+
+        private void StartFight()
+        {
+            fight = new Simulation(config, StartX);
             previousFeet = currentFeet = ReadFeet();
+            previousBossX = currentBossX = (float)fight.Boss.X;
+            hud.HideEndScreen();
         }
 
         private void Update()
         {
-            if (state == null)
+            if (fight == null)
             {
                 return;
             }
 
             input.Update();
+
+            if (input.ConsumeReplay())
+            {
+                StartFight();
+            }
+
             accumulator += Mathf.Min(Time.unscaledDeltaTime, MaxFrameSeconds);
 
             while (accumulator >= Ticks.DeltaSeconds)
             {
                 var intent = new MovementIntent(input.MoveX, input.MoveY, input.ConsumeDash());
-                CombatIntent combatIntent = input.ConsumeCombat();
-                Combat.Step(combat, state, resources, intent, combatIntent, config, map, null, events);
+                fight.Step(intent, input.ConsumeCombat());
                 previousFeet = currentFeet;
                 currentFeet = ReadFeet();
+                previousBossX = currentBossX;
+                currentBossX = (float)fight.Boss.X;
                 accumulator -= (float)Ticks.DeltaSeconds;
             }
 
-            float blend = accumulator / (float)Ticks.DeltaSeconds;
-            view.Show(Vector2.Lerp(previousFeet, currentFeet, blend), state.Facing, combat.Phase);
-            fx.Show(combat, state, events);
-            events.Clear();
+            ShowWorld();
+            ShowHud();
+            fight.ClearEvents();
+        }
 
+        private void ShowWorld()
+        {
+            float blend = accumulator / (float)Ticks.DeltaSeconds;
+
+            fx.Show(fight, config.Boss);
+            view.Show(Vector2.Lerp(previousFeet, currentFeet, blend), fight.Player.Facing, fight.Combat.Phase, fx.PlayerHurt);
+            bossView.Show(Mathf.Lerp(previousBossX, currentBossX, blend), fight);
+        }
+
+        private void ShowHud()
+        {
             CharacterConfig character = config.Character;
+
             hud.ShowResources(
-                (float)resources.Hp / character.MaxHp,
-                (float)(resources.Energy / character.MaxEnergy),
-                (float)(state.Stamina / character.MaxStamina));
+                (float)fight.Resources.Hp / character.MaxHp,
+                (float)(fight.Resources.Energy / character.MaxEnergy),
+                (float)(fight.Player.Stamina / character.MaxStamina));
+            hud.ShowBossHealth((float)fight.Boss.Hp / config.Boss.MaxHp);
             ShowButtons();
+
+            if (fight.Result != MatchResult.Playing && !hud.EndScreenVisible)
+            {
+                hud.ShowEndScreen(fight.Result == MatchResult.Won ? "Thắng" : "Thua", EndSummary());
+            }
+        }
+
+        private string EndSummary()
+        {
+            string seconds = fight.SecondsPlayed.ToString("0.0", CultureInfo.InvariantCulture).Replace('.', ',');
+            string summary = $"Thời gian: {seconds} giây\nSố đòn bị trúng: {fight.HitsTaken}\nThuốc đã dùng: {fight.PotionsUsed}";
+
+            return fight.KilledBy == null ? summary : $"{summary}\nĐòn khiến thua: {fight.KilledBy.Name}";
         }
 
         private void ShowButtons()
         {
+            CombatState combat = fight.Combat;
+
             foreach (HudButtonSpec spec in HudLayout.Buttons)
             {
                 SkillSlot? slot = HudLayout.SlotOf(spec.Button);
@@ -101,7 +151,7 @@ namespace DaKiem.Client
                 if (slot != null)
                 {
                     double left = combat.CooldownSecondsLeft(slot.Value);
-                    bool ready = Combat.IsSkillReady(combat, resources, config.Skill(slot.Value));
+                    bool ready = Combat.IsSkillReady(combat, fight.Resources, config.Skill(slot.Value));
                     hud.SetButton(spec.Button, left > 0d ? WholeSeconds(left) : spec.Label, !ready);
                 }
                 else if (spec.Button == HudButton.Potion)
@@ -132,19 +182,20 @@ namespace DaKiem.Client
                 return;
             }
 
-            if (state == null)
+            if (fight == null)
             {
                 return;
             }
 
-            string text = $"x {state.X:0.00}  y {state.Y:0.00}  stamina {state.Stamina:0}";
+            MovementState player = fight.Player;
+            string text = $"x {player.X:0.00}  y {player.Y:0.00}  stamina {player.Stamina:0}";
 
-            GUI.Label(new Rect(Screen.width * 0.3f, Screen.height / 8f, Screen.width, Screen.height / 8f), text, style);
+            GUI.Label(new Rect(Screen.width * 0.3f, Screen.height / 6f, Screen.width, Screen.height / 8f), text, style);
         }
 
         private Vector2 ReadFeet()
         {
-            return new Vector2((float)state.X, (float)state.Y);
+            return new Vector2((float)fight.Player.X, (float)fight.Player.Y);
         }
     }
 }

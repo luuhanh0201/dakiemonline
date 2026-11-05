@@ -19,6 +19,7 @@ namespace DaKiem.Client
         private static readonly Color BodyColor = new Color32(0x3D, 0x8B, 0xF2, 0xFF);
         private static readonly Color FaceColor = new Color32(0xDC, 0xE6, 0xFF, 0xFF);
         private static readonly Color WindupColor = new Color32(0x9C, 0xC4, 0xFA, 0xFF);
+        private static readonly Color HurtColor = new Color32(0xD9, 0x4F, 0x4F, 0xFF);
 
         private readonly Sprite square;
         private readonly Camera camera;
@@ -49,9 +50,9 @@ namespace DaKiem.Client
             camera.transform.position = new Vector3(ViewWidth / 2f, camera.orthographicSize - GroundMargin, -10f);
         }
 
-        public void Show(Vector2 feet, int facing, CastPhase phase)
+        public void Show(Vector2 feet, int facing, CastPhase phase, bool hurt)
         {
-            bodyRenderer.color = phase == CastPhase.Windup ? WindupColor : BodyColor;
+            bodyRenderer.color = hurt ? HurtColor : phase == CastPhase.Windup ? WindupColor : BodyColor;
             body.position = new Vector3(feet.x, feet.y + bodyHeight / 2f, 0f);
             face.position = new Vector3(feet.x + facing * bodyWidth / 3f, feet.y + bodyHeight * 0.75f, 0f);
 

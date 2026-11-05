@@ -18,6 +18,7 @@ namespace DaKiem.Client
         private bool dashPressed;
         private bool potionPressed;
         private SkillSlot? skillPressed;
+        private bool replayPressed;
 
         public InputReader(HudView hud)
         {
@@ -57,6 +58,13 @@ namespace DaKiem.Client
             return pressed;
         }
 
+        public bool ConsumeReplay()
+        {
+            bool pressed = replayPressed;
+            replayPressed = false;
+            return pressed;
+        }
+
         public CombatIntent ConsumeCombat()
         {
             var intent = new CombatIntent(skillPressed, potionPressed);
@@ -67,6 +75,12 @@ namespace DaKiem.Client
 
         private void BeginTouch(Touch touch)
         {
+            if (hud.EndScreenVisible)
+            {
+                replayPressed |= hud.ReplayButtonAt(touch.screenPosition);
+                return;
+            }
+
             bool onLeftHalf = touch.screenPosition.x < Screen.width / 2f;
 
             if (onLeftHalf)
