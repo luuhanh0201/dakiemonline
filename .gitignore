@@ -1,0 +1,31 @@
+# Unity
+client/[Ll]ibrary/
+client/[Tt]emp/
+client/[Oo]bj/
+client/[Bb]uild/
+client/[Bb]uilds/
+client/[Ll]ogs/
+client/[Uu]ser[Ss]ettings/
+client/*.csproj
+client/*.sln
+client/*.slnx
+*.apk
+*.aab
+
+# .NET
+bin/
+obj/
+*.user
+TestResults/
+
+# Secrets
+.env
+*.keystore
+
+# Design documents kept local until approved for this public repository
+docs/GDD.md
+docs/SPEC-0.5.md
+docs/ARCHITECTURE.md
+docs/AI-CONVENTIONS.md
+docs/ART.md
+docs/*.xlsx
