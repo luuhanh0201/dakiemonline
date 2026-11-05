@@ -5,20 +5,20 @@ using TouchPhase = UnityEngine.InputSystem.TouchPhase;
 
 namespace DaKiem.Client
 {
-    /// <summary>Turns touches into joystick tilt and dash presses.</summary>
+    /// <summary>Turns touches into joystick tilt and button presses.</summary>
     public sealed class InputReader
     {
-        private const float JoystickRadiusDp = 64f;
-        private const float BaselineDpi = 160f;
         private const float DeadZone = 0.1f;
         private const int NoFinger = -1;
 
+        private readonly HudView hud;
         private int joystickFinger = NoFinger;
         private Vector2 joystickOrigin;
         private bool dashPressed;
 
-        public InputReader()
+        public InputReader(HudView hud)
         {
+            this.hud = hud;
             EnhancedTouchSupport.Enable();
         }
 
@@ -58,15 +58,27 @@ namespace DaKiem.Client
         {
             bool onLeftHalf = touch.screenPosition.x < Screen.width / 2f;
 
-            if (onLeftHalf && joystickFinger == NoFinger)
+            if (onLeftHalf)
             {
-                joystickFinger = touch.finger.index;
-                joystickOrigin = touch.screenPosition;
+                if (joystickFinger == NoFinger)
+                {
+                    joystickFinger = touch.finger.index;
+                    joystickOrigin = touch.screenPosition;
+                    hud.ShowJoystick(true, joystickOrigin, Vector2.zero);
+                }
+
+                return;
             }
-            else if (!onLeftHalf)
+
+            HudButton button = hud.ButtonAt(touch.screenPosition);
+
+            if (button == HudButton.None)
             {
-                dashPressed = true;
+                return;
             }
+
+            hud.Flash(button);
+            dashPressed |= button == HudButton.Dash;
         }
 
         private void MoveTouch(Touch touch)
@@ -76,9 +88,13 @@ namespace DaKiem.Client
                 return;
             }
 
-            Vector2 tilt = (touch.screenPosition - joystickOrigin) / JoystickRadiusPixels();
+            float radius = HudLayout.JoystickDiameterDp / 2f * HudLayout.DpToPixels;
+            Vector2 offset = Vector2.ClampMagnitude(touch.screenPosition - joystickOrigin, radius);
+            Vector2 tilt = (touch.screenPosition - joystickOrigin) / radius;
+
             MoveX = ApplyDeadZone(tilt.x);
             MoveY = ApplyDeadZone(tilt.y);
+            hud.ShowJoystick(true, joystickOrigin, offset);
         }
 
         private void EndTouch(Touch touch)
@@ -91,12 +107,7 @@ namespace DaKiem.Client
             joystickFinger = NoFinger;
             MoveX = 0d;
             MoveY = 0d;
-        }
-
-        private static float JoystickRadiusPixels()
-        {
-            float dpi = Screen.dpi > 0f ? Screen.dpi : BaselineDpi;
-            return JoystickRadiusDp * dpi / BaselineDpi;
+            hud.ShowJoystick(false, Vector2.zero, Vector2.zero);
         }
 
         private static double ApplyDeadZone(float tilt)

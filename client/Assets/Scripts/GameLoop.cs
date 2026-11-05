@@ -12,6 +12,7 @@ namespace DaKiem.Client
         private const double StartStamina = 100d;
 
         private InputReader input;
+        private HudView hud;
         private WorldView view;
         private MovementConfig movementConfig;
         private CollisionMap map;
@@ -33,7 +34,8 @@ namespace DaKiem.Client
             yield return ConfigFiles.Load("movement.json", json => movementConfig = ConfigFiles.ParseMovement(json));
             yield return ConfigFiles.Load("map.test.json", json => boxes = ConfigFiles.ParseMap(json));
 
-            input = new InputReader();
+            hud = new HudView();
+            input = new InputReader(hud);
             map = new CollisionMap(boxes);
             view = new WorldView(boxes, movementConfig);
             state = new MovementState(StartX, 0d, StartStamina);
@@ -61,6 +63,9 @@ namespace DaKiem.Client
 
             float blend = accumulator / (float)Ticks.DeltaSeconds;
             view.Show(Vector2.Lerp(previousFeet, currentFeet, blend), state.Facing);
+
+            // Health and energy stay full until T014 adds them to the rules.
+            hud.ShowResources(1f, 1f, (float)(state.Stamina / StartStamina));
         }
 
         private void OnGUI()
@@ -77,7 +82,7 @@ namespace DaKiem.Client
             };
             string text = $"x {state.X:0.00}  y {state.Y:0.00}  stamina {state.Stamina:0}";
 
-            GUI.Label(new Rect(20f, Screen.height / 8f, Screen.width, Screen.height / 8f), text, style);
+            GUI.Label(new Rect(Screen.width * 0.3f, Screen.height / 8f, Screen.width, Screen.height / 8f), text, style);
         }
 
         private Vector2 ReadFeet()
