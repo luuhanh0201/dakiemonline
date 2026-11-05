@@ -2,7 +2,7 @@
   "version": 1,
   "id": "movement.default",
   "status": "THU",
-  "source": "SPEC-0.5 buoc 2",
+  "source": "SPEC-0.5 buoc 2, GDD 18.2",
   "runSpeed": 4,
   "walkSpeed": 2,
   "walkTiltBelow": 0.5,
@@ -15,6 +15,10 @@
   "dashDurationSec": 0.2,
   "dashStaminaCost": 25,
   "airDashesPerJump": 1,
+  "staminaRegenIdle": 20,
+  "staminaRegenWalk": 10,
+  "staminaRegenAttacking": 5,
+  "staminaRegenDelaySec": 1,
   "bodyWidth": 0.5,
   "bodyHeight": 1
 }

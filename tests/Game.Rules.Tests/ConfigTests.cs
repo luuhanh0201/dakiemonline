@@ -199,7 +199,7 @@ namespace Game.Rules.Tests
         [InlineData(Character, "\"maxHp\": 1000,", "", "missing field")]
         [InlineData(Movement, "\"runSpeed\": 4,", "", "missing field")]
         [InlineData(Character, "\"status\": \"THU\",", "", "missing field")]
-        [InlineData(Character, "\"source\": \"GDD 18.1 va 19.4\",", "", "missing field")]
+        [InlineData(Character, "\"source\": \"GDD 18.1, 18.2 va 19.4\",", "", "missing field")]
         [InlineData(Map, "\"id\": \"map.test\",", "", "missing field")]
         [InlineData(Map, "\"oneWay\": false }", "\"unused\": false }", "missing field")]
         public void MissingFieldIsRejected(string file, string find, string replace, string problem)
@@ -212,7 +212,7 @@ namespace Game.Rules.Tests
         [InlineData(Character, "\"defense\": 0", "\"defense\": -1", "cannot be negative")]
         [InlineData(Character, "\"version\": 1", "\"version\": 2", "only version 1")]
         [InlineData(Character, "\"status\": \"THU\"", "\"status\": \"OK\"", "not one of")]
-        [InlineData(Character, "\"source\": \"GDD 18.1 va 19.4\"", "\"source\": \" \"", "cannot be empty")]
+        [InlineData(Character, "\"source\": \"GDD 18.1, 18.2 va 19.4\"", "\"source\": \" \"", "cannot be empty")]
         [InlineData(Character, "\"id\": \"character.fixture\"", "\"id\": \"Nhân Vật\"", "must be lowercase")]
         [InlineData(Movement, "\"walkTiltBelow\": 0.5", "\"walkTiltBelow\": 1.5", "between 0 and 1")]
         [InlineData(Movement, "\"dashDurationSec\": 0.2", "\"dashDurationSec\": 0", "greater than 0")]
@@ -283,7 +283,7 @@ namespace Game.Rules.Tests
         public void ByteOrderMarkAndEscapesAreAccepted()
         {
             Dictionary<string, string> files = TestConfig.Files();
-            files[Character] = "\uFEFF" + files[Character].Replace("GDD 18.1 va 19.4", "GDD \\u0041\\n");
+            files[Character] = "\uFEFF" + files[Character].Replace("GDD 18.1, 18.2 va 19.4", "GDD \\u0041\\n");
 
             Assert.Equal("GDD A\n", GameConfig.Parse(files).Character.Source);
         }

@@ -14,6 +14,10 @@ namespace Game.Rules
         public double DashDurationSec { get; set; }
         public double DashStaminaCost { get; set; }
         public int AirDashesPerJump { get; set; }
+        public double StaminaRegenIdle { get; set; }
+        public double StaminaRegenWalk { get; set; }
+        public double StaminaRegenAttacking { get; set; }
+        public double StaminaRegenDelaySec { get; set; }
         public double BodyWidth { get; set; }
         public double BodyHeight { get; set; }
     }

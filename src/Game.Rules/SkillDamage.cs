@@ -20,6 +20,18 @@ namespace Game.Rules
             return (baseDamage + attack * attackCoefficient) * (1m + levelPercent / 100m * (level - 1));
         }
 
+        /// <summary>
+        /// Damage of one hit against a target. Multi-hit skills split S by phase;
+        /// skills without phases, such as projectiles, deal all of S in one hit.
+        /// </summary>
+        public static int HitDamage(SkillConfig skill, int phaseIndex, decimal attack, int level, decimal defense)
+        {
+            decimal total = BeforeDefense(skill.BaseDamage, attack, skill.AttackCoefficient, skill.LevelPercent, level);
+            decimal percent = skill.ActivePhases.Count == 0 ? 100m : skill.ActivePhases[phaseIndex].DamagePercent;
+
+            return AfterDefense(total * percent / 100m, defense);
+        }
+
         /// <summary>Damage taken = S × 100 / (100 + defense), rounded down.</summary>
         public static int AfterDefense(decimal damageBeforeDefense, decimal defense)
         {

@@ -18,6 +18,7 @@ namespace DaKiem.Client
         private string configError;
         private CollisionMap map;
         private MovementState state;
+        private ResourceState resources;
         private Vector2 previousFeet;
         private Vector2 currentFeet;
         private float accumulator;
@@ -49,6 +50,7 @@ namespace DaKiem.Client
             map = new CollisionMap(config.MapBoxes);
             view = new WorldView(config.MapBoxes, config.Movement);
             state = new MovementState(StartX, 0d, config.Character.MaxStamina);
+            resources = new ResourceState(config.Character);
             previousFeet = currentFeet = ReadFeet();
         }
 
@@ -66,6 +68,7 @@ namespace DaKiem.Client
             {
                 var intent = new MovementIntent(input.MoveX, input.MoveY, input.ConsumeDash());
                 Movement.Step(state, intent, config.Movement, map);
+                ResourceRules.Step(resources, state, intent, false, config.Character, config.Movement);
                 previousFeet = currentFeet;
                 currentFeet = ReadFeet();
                 accumulator -= (float)Ticks.DeltaSeconds;
@@ -74,8 +77,11 @@ namespace DaKiem.Client
             float blend = accumulator / (float)Ticks.DeltaSeconds;
             view.Show(Vector2.Lerp(previousFeet, currentFeet, blend), state.Facing);
 
-            // Health and energy stay full until T014 adds them to the rules.
-            hud.ShowResources(1f, 1f, (float)(state.Stamina / config.Character.MaxStamina));
+            CharacterConfig character = config.Character;
+            hud.ShowResources(
+                (float)resources.Hp / character.MaxHp,
+                (float)(resources.Energy / character.MaxEnergy),
+                (float)(state.Stamina / character.MaxStamina));
         }
 
         private void OnGUI()

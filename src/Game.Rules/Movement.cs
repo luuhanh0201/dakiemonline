@@ -49,6 +49,7 @@ namespace Game.Rules
         internal int DashTicksLeft { get; set; }
         internal int DashDirection { get; set; }
         internal int AirDashesUsed { get; set; }
+        internal int StaminaDelayTicks { get; set; }
     }
 
     public static class Movement
@@ -100,6 +101,7 @@ namespace Game.Rules
             }
 
             state.Stamina -= config.DashStaminaCost;
+            state.StaminaDelayTicks = Ticks.FromSeconds(config.StaminaRegenDelaySec);
             state.DashDirection = intent.MoveX != 0d ? Math.Sign(intent.MoveX) : state.Facing;
             state.Facing = state.DashDirection;
             state.DashTicksLeft = Ticks.FromSeconds(config.DashDurationSec);

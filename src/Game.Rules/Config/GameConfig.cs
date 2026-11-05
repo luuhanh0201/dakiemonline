@@ -93,6 +93,7 @@ namespace Game.Rules
             {
                 MaxHp = PositiveInt(root, "maxHp"),
                 MaxEnergy = PositiveInt(root, "maxEnergy"),
+                EnergyRegenPerSec = root.NotNegative("energyRegenPerSec"),
                 MaxStamina = PositiveInt(root, "maxStamina"),
                 Attack = root.PositiveDecimal("attack"),
                 Defense = root.NotNegativeDecimal("defense"),
@@ -119,6 +120,10 @@ namespace Game.Rules
                 DashDurationSec = root.Positive("dashDurationSec"),
                 DashStaminaCost = root.NotNegative("dashStaminaCost"),
                 AirDashesPerJump = NotNegativeInt(root, "airDashesPerJump"),
+                StaminaRegenIdle = root.NotNegative("staminaRegenIdle"),
+                StaminaRegenWalk = root.NotNegative("staminaRegenWalk"),
+                StaminaRegenAttacking = root.NotNegative("staminaRegenAttacking"),
+                StaminaRegenDelaySec = root.NotNegative("staminaRegenDelaySec"),
                 BodyWidth = root.Positive("bodyWidth"),
                 BodyHeight = root.Positive("bodyHeight"),
             };
