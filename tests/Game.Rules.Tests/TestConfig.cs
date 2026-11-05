@@ -1,31 +1,23 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Text.Json;
+using System.Linq;
 
 namespace Game.Rules.Tests
 {
     internal static class TestConfig
     {
-        private static readonly JsonSerializerOptions Options = new JsonSerializerOptions
+        public static Dictionary<string, string> Files()
         {
-            PropertyNameCaseInsensitive = true,
-        };
-
-        public static MovementConfig Movement() => Load<MovementConfig>("movement.json");
-
-        public static CollisionMap TestMap() => new CollisionMap(Load<MapFile>("map.test.json").Boxes);
-
-        private static T Load<T>(string fileName)
-        {
-            string path = Path.Combine(AppContext.BaseDirectory, "config", fileName);
-            return JsonSerializer.Deserialize<T>(File.ReadAllText(path), Options)
-                ?? throw new InvalidDataException($"{fileName} is empty.");
+            return GameConfig.FileNames.ToDictionary(
+                name => name,
+                name => File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "config", name)));
         }
 
-        private sealed class MapFile
-        {
-            public List<MapBox> Boxes { get; set; } = new List<MapBox>();
-        }
+        public static GameConfig Load() => GameConfig.Parse(Files());
+
+        public static MovementConfig Movement() => Load().Movement;
+
+        public static CollisionMap TestMap() => new CollisionMap(Load().MapBoxes);
     }
 }

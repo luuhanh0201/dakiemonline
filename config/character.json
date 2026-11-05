@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "id": "character.fixture",
+  "status": "THU",
+  "source": "GDD 18.1 va 19.4",
+  "maxHp": 1000,
+  "maxEnergy": 100,
+  "maxStamina": 100,
+  "attack": 100,
+  "defense": 0
+}

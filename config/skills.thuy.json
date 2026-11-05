@@ -1,0 +1,112 @@
+{
+  "version": 1,
+  "skills": [
+    {
+      "id": "thuy.danh_thuong",
+      "status": "THU",
+      "source": "GDD 18.1, SPEC-0.5 buoc 4",
+      "slot": "attack",
+      "cooldownSec": 0,
+      "energyCost": 0,
+      "baseDamage": 0,
+      "attackCoefficient": 0.6,
+      "windupSec": 0.15,
+      "recoverySec": 0.35,
+      "moveSpeedPercent": 60,
+      "allowedInAir": true,
+      "activePhases": [
+        { "durationSec": 0.1, "damagePercent": 100 }
+      ],
+      "hitbox": { "width": 1.5, "height": 1, "pierce": false }
+    },
+    {
+      "id": "thuy.kiem_khi",
+      "status": "THU",
+      "source": "GDD 18.1 va 8.3, SPEC-0.5 buoc 4",
+      "slot": "ranged",
+      "cooldownSec": 4,
+      "energyCost": 8,
+      "baseDamage": 40,
+      "attackCoefficient": 1.2,
+      "levelPercent": 10,
+      "windupSec": 0.2,
+      "recoverySec": 0.2,
+      "moveSpeedPercent": 60,
+      "allowedInAir": true,
+      "projectile": { "speed": 10, "range": 6, "width": 0.5 }
+    },
+    {
+      "id": "thuy.hoi_mau",
+      "status": "THU",
+      "source": "GDD 18.1, SPEC-0.5 buoc 4",
+      "slot": "support",
+      "cooldownSec": 20,
+      "energyCost": 25,
+      "baseDamage": 0,
+      "attackCoefficient": 0,
+      "windupSec": 0.3,
+      "recoverySec": 0.2,
+      "moveSpeedPercent": 0,
+      "allowedInAir": false,
+      "heal": { "base": 100, "maxHpPercent": 10 }
+    },
+    {
+      "id": "thuy.chem_tien",
+      "status": "THU",
+      "source": "GDD 18.1, SPEC-0.5 buoc 4",
+      "slot": "optionA",
+      "cooldownSec": 7,
+      "energyCost": 12,
+      "baseDamage": 30,
+      "attackCoefficient": 1.3,
+      "windupSec": 0.1,
+      "recoverySec": 0.3,
+      "moveSpeedPercent": 0,
+      "allowedInAir": false,
+      "dashDistance": 3,
+      "activePhases": [
+        { "durationSec": 0.2, "damagePercent": 100 }
+      ],
+      "hitbox": { "width": 3, "height": 1, "pierce": false }
+    },
+    {
+      "id": "thuy.song_kiem",
+      "status": "THU",
+      "source": "GDD 18.1, SPEC-0.5 buoc 4",
+      "slot": "optionB",
+      "cooldownSec": 10,
+      "energyCost": 15,
+      "baseDamage": 30,
+      "attackCoefficient": 1,
+      "windupSec": 0.25,
+      "recoverySec": 0.25,
+      "moveSpeedPercent": 0,
+      "allowedInAir": false,
+      "activePhases": [
+        { "durationSec": 0.3, "damagePercent": 100 }
+      ],
+      "hitbox": { "width": 4, "height": 1.5, "pierce": true },
+      "slow": { "percent": 20, "durationSec": 2 }
+    },
+    {
+      "id": "thuy.tuyet_ky",
+      "status": "THU",
+      "source": "GDD 18.1, SPEC-0.5 buoc 4",
+      "slot": "ultimate",
+      "cooldownSec": 35,
+      "energyCost": 35,
+      "baseDamage": 180,
+      "attackCoefficient": 4.2,
+      "windupSec": 0.2,
+      "recoverySec": 0.3,
+      "moveSpeedPercent": 0,
+      "allowedInAir": false,
+      "activePhases": [
+        { "durationSec": 0.3, "damagePercent": 25 },
+        { "durationSec": 0.3, "damagePercent": 25 },
+        { "durationSec": 0.4, "damagePercent": 50 }
+      ],
+      "hitbox": { "width": 3, "height": 2, "pierce": false }
+    }
+  ]
+}

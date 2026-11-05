@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using Game.Rules;
 using UnityEngine;
 
@@ -9,12 +10,12 @@ namespace DaKiem.Client
     {
         private const float MaxFrameSeconds = 0.25f;
         private const double StartX = 5d;
-        private const double StartStamina = 100d;
 
         private InputReader input;
         private HudView hud;
         private WorldView view;
-        private MovementConfig movementConfig;
+        private GameConfig config;
+        private string configError;
         private CollisionMap map;
         private MovementState state;
         private Vector2 previousFeet;
@@ -29,16 +30,25 @@ namespace DaKiem.Client
 
         private IEnumerator Start()
         {
-            MapBox[] boxes = null;
+            var files = new Dictionary<string, string>();
+            yield return ConfigFiles.LoadAll(files);
 
-            yield return ConfigFiles.Load("movement.json", json => movementConfig = ConfigFiles.ParseMovement(json));
-            yield return ConfigFiles.Load("map.test.json", json => boxes = ConfigFiles.ParseMap(json));
+            try
+            {
+                config = GameConfig.Parse(files);
+            }
+            catch (InvalidConfigException error)
+            {
+                configError = error.Message;
+                Debug.LogError(configError);
+                yield break;
+            }
 
             hud = new HudView();
             input = new InputReader(hud);
-            map = new CollisionMap(boxes);
-            view = new WorldView(boxes, movementConfig);
-            state = new MovementState(StartX, 0d, StartStamina);
+            map = new CollisionMap(config.MapBoxes);
+            view = new WorldView(config.MapBoxes, config.Movement);
+            state = new MovementState(StartX, 0d, config.Character.MaxStamina);
             previousFeet = currentFeet = ReadFeet();
         }
 
@@ -55,7 +65,7 @@ namespace DaKiem.Client
             while (accumulator >= Ticks.DeltaSeconds)
             {
                 var intent = new MovementIntent(input.MoveX, input.MoveY, input.ConsumeDash());
-                Movement.Step(state, intent, movementConfig, map);
+                Movement.Step(state, intent, config.Movement, map);
                 previousFeet = currentFeet;
                 currentFeet = ReadFeet();
                 accumulator -= (float)Ticks.DeltaSeconds;
@@ -65,21 +75,28 @@ namespace DaKiem.Client
             view.Show(Vector2.Lerp(previousFeet, currentFeet, blend), state.Facing);
 
             // Health and energy stay full until T014 adds them to the rules.
-            hud.ShowResources(1f, 1f, (float)(state.Stamina / StartStamina));
+            hud.ShowResources(1f, 1f, (float)(state.Stamina / config.Character.MaxStamina));
         }
 
         private void OnGUI()
         {
-            if (state == null)
-            {
-                return;
-            }
-
             var style = new GUIStyle(GUI.skin.label)
             {
                 fontSize = Screen.height / 24,
                 normal = { textColor = Color.white },
             };
+
+            if (configError != null)
+            {
+                GUI.Label(new Rect(0f, 0f, Screen.width, Screen.height), configError, style);
+                return;
+            }
+
+            if (state == null)
+            {
+                return;
+            }
+
             string text = $"x {state.X:0.00}  y {state.Y:0.00}  stamina {state.Stamina:0}";
 
             GUI.Label(new Rect(Screen.width * 0.3f, Screen.height / 8f, Screen.width, Screen.height / 8f), text, style);

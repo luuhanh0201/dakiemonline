@@ -1,6 +1,6 @@
 namespace Game.Rules
 {
-    public sealed class MovementConfig
+    public sealed class MovementConfig : ConfigEntry
     {
         public double RunSpeed { get; set; }
         public double WalkSpeed { get; set; }
