@@ -6,6 +6,7 @@ client/[Bb]uild/
 client/[Bb]uilds/
 client/[Ll]ogs/
 client/[Uu]ser[Ss]ettings/
+client/.utmp/
 client/*.csproj
 client/*.sln
 client/*.slnx

@@ -10,6 +10,7 @@ Phạm vi hiện tại: mốc 0.5, bản thử Android không có mạng.
 - Không đổi quy tắc CHOT nếu chưa hỏi.
 - Hỏi trước khi thêm package, nâng phiên bản, xóa dữ liệu, push hoặc phát hành.
 - Tài liệu dự án lưu trong docs/, không đẩy lên GitHub.
+- Asset ưu tiên miễn phí; phải gửi cho người dùng duyệt trước khi dùng.
 
 ## Kiểm tra
 - Thay đổi luật phải có test và chạy dotnet test.
