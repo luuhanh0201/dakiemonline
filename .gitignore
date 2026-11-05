@@ -24,3 +24,6 @@ TestResults/
 
 # Project documents stay local
 docs/
+
+# Built by tools/sync-rules.ps1
+client/Assets/Plugins/Game.Rules/*.dll
