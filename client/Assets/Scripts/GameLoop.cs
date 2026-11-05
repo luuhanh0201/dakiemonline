@@ -11,6 +11,7 @@ namespace DaKiem.Client
     {
         private const float MaxFrameSeconds = 0.25f;
         private const double StartX = 5d;
+        private const float SystemBarCheckSeconds = 0.5f;
 
         private InputReader input;
         private HudView hud;
@@ -25,6 +26,7 @@ namespace DaKiem.Client
         private float previousBossX;
         private float currentBossX;
         private float accumulator;
+        private float nextSystemBarCheck;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Create()
@@ -72,10 +74,17 @@ namespace DaKiem.Client
             previousFeet = currentFeet = ReadFeet();
             previousBossX = currentBossX = (float)fight.Boss.X;
             hud.HideEndScreen();
+            FpsOverlay.ResetLowestFps();
         }
 
         private void Update()
         {
+            if (Time.unscaledTime >= nextSystemBarCheck)
+            {
+                nextSystemBarCheck = Time.unscaledTime + SystemBarCheckSeconds;
+                AndroidImmersive.Apply();
+            }
+
             if (fight == null)
             {
                 return;
@@ -129,6 +138,7 @@ namespace DaKiem.Client
             if (fight.Result != MatchResult.Playing && !hud.EndScreenVisible)
             {
                 hud.ShowEndScreen(fight.Result == MatchResult.Won ? "Thắng" : "Thua", EndSummary());
+                MatchLog.Write(fight, FpsOverlay.LowestFps);
             }
         }
 

@@ -3,8 +3,9 @@ using UnityEngine;
 namespace DaKiem.Client
 {
     /// <summary>
-    /// Keeps Android's system bars hidden. Without this, a touch brings the navigation bar
-    /// back over the buttons; with it, the bars only appear briefly after a swipe from the edge.
+    /// Keeps Android's system bars hidden so a touch cannot bring the navigation bar over the
+    /// buttons. A swipe from the screen edge still shows them briefly and the system hides them
+    /// again. The engine can undo the request while starting, so <see cref="Apply"/> runs repeatedly.
     /// </summary>
     public static class AndroidImmersive
     {
@@ -29,19 +30,39 @@ namespace DaKiem.Client
         {
             using var version = new AndroidJavaClass("android.os.Build$VERSION");
             using AndroidJavaObject window = activity.Call<AndroidJavaObject>("getWindow");
+            using AndroidJavaObject decor = window.Call<AndroidJavaObject>("getDecorView");
 
             if (version.GetStatic<int>("SDK_INT") >= InsetsControllerApi)
             {
-                using var insetsType = new AndroidJavaClass("android.view.WindowInsets$Type");
-                using AndroidJavaObject controller = window.Call<AndroidJavaObject>("getInsetsController");
-
-                controller.Call("setSystemBarsBehavior", ShowTransientBarsBySwipe);
-                controller.Call("hide", insetsType.CallStatic<int>("systemBars"));
+                HideBarsWithController(window, decor);
             }
             else
             {
-                using AndroidJavaObject decor = window.Call<AndroidJavaObject>("getDecorView");
                 decor.Call("setSystemUiVisibility", LegacyImmersiveFlags);
+            }
+        }
+
+        private static void HideBarsWithController(AndroidJavaObject window, AndroidJavaObject decor)
+        {
+            using var insetsType = new AndroidJavaClass("android.view.WindowInsets$Type");
+            using AndroidJavaObject controller = window.Call<AndroidJavaObject>("getInsetsController");
+            using AndroidJavaObject insets = decor.Call<AndroidJavaObject>("getRootWindowInsets");
+
+            controller.Call("setSystemBarsBehavior", ShowTransientBarsBySwipe);
+
+            if (insets == null)
+            {
+                return;
+            }
+
+            // Bars shown by a swipe do not count as visible here, so they stay until the system
+            // hides them and the player has time to press them.
+            bool barsShown = insets.Call<bool>("isVisible", insetsType.CallStatic<int>("navigationBars"))
+                || insets.Call<bool>("isVisible", insetsType.CallStatic<int>("statusBars"));
+
+            if (barsShown)
+            {
+                controller.Call("hide", insetsType.CallStatic<int>("systemBars"));
             }
         }
 #endif
