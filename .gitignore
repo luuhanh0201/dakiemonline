@@ -7,6 +7,8 @@ client/[Bb]uilds/
 client/[Ll]ogs/
 client/[Uu]ser[Ss]ettings/
 client/.utmp/
+client/Assets/StreamingAssets/
+client/Assets/StreamingAssets.meta
 client/*.csproj
 client/*.sln
 client/*.slnx

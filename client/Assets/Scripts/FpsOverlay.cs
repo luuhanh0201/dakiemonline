@@ -10,7 +10,7 @@ namespace DaKiem.Client
         private float elapsed;
         private int frames;
         private int fps;
-        private GUIStyle? style;
+        private GUIStyle style;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Create()
