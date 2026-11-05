@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "id": "movement.default",
+  "status": "THU",
+  "source": "SPEC-0.5 buoc 2",
+  "runSpeed": 4,
+  "walkSpeed": 2,
+  "walkTiltBelow": 0.5,
+  "jumpHeight": 2,
+  "jumpTimeToPeakSec": 0.4,
+  "jumpSwipeAbove": 0.6,
+  "coyoteTimeSec": 0.1,
+  "inputBufferSec": 0.15,
+  "dashDistance": 3,
+  "dashDurationSec": 0.2,
+  "dashStaminaCost": 25,
+  "airDashesPerJump": 1,
+  "bodyWidth": 0.5,
+  "bodyHeight": 1
+}
