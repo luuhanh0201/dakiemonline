@@ -161,10 +161,8 @@ namespace DaKiem.Client
             }
 
             if (keys.f1Key.wasPressedThisFrame) gearPressed = GearSlot.Weapon;
-            if (keys.f2Key.wasPressedThisFrame) gearPressed = GearSlot.Hat;
-            if (keys.f3Key.wasPressedThisFrame) gearPressed = GearSlot.Armor;
-            if (keys.f4Key.wasPressedThisFrame) gearPressed = GearSlot.Pants;
-            if (keys.f5Key.wasPressedThisFrame) gearPressed = GearSlot.Cape;
+            if (keys.f2Key.wasPressedThisFrame) gearPressed = GearSlot.Armor;
+            if (keys.f3Key.wasPressedThisFrame) gearPressed = GearSlot.Pants;
 
             if (hud.EndScreenVisible)
             {

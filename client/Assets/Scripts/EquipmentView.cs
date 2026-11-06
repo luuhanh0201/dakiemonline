@@ -7,10 +7,8 @@ namespace DaKiem.Client
     public enum GearSlot
     {
         Weapon,
-        Hat,
         Armor,
         Pants,
-        Cape,
     }
 
     /// <summary>
@@ -69,44 +67,31 @@ namespace DaKiem.Client
 
         private const float BakedPixelsPerLayoutPixel = CharacterRigScale.BakeScale;
 
-        // Middle of each baked canvas, in layout pixels with Y pointing down.
-        private const float HatCentreX = 310f;
-        private const float HatCentreY = -60f / BakedPixelsPerLayoutPixel + 70f / BakedPixelsPerLayoutPixel;
+        // Middle of the armour canvas, in layout pixels with Y pointing down.
         private const float BodyCentreX = 310f;
-        private const float BodyCentreY = 320f;
+        private const float BodyCentreY = 492f;
 
         // The handle sits in the fist, and the canvas middle lies this far along the blade.
         private const float GripX = 295f;
         private const float GripY = 543f;
         private const float GripToCanvasMiddle = 59f / BakedPixelsPerLayoutPixel;
 
-        // Along the blade from the grip, in world units, for the swing's trail.
-        private const float BladeInner = 0.38f;
-        private const float BladeOuter = 0.62f;
+        // The swing's trail starts this share of the way along the blade from the grip.
+        private const float BladeInnerShare = 0.55f;
+        private const byte SolidAlpha = 160;
 
         // The second fist sits this far down the handle from the first, in world units.
         private const float SecondHandDrop = 0.1f;
 
-        private const float CapeRootX = 262f;
-        private const float CapeRootY = 268f;
-
-        private const int CapeOrder = 10;
-        private const int HatBackOrder = 14;
         private const int BodyOrder = 24;
-        private const int HatOrder = 28;
         private const int WeaponOrder = 26;
-        private const int FrontCapeOrder = 18;
-        private const int FrontHatBackOrder = 19;
         private const int FrontPantsOrder = 21;
         private const int FrontArmorOrder = 22;
-        private const int FrontHatOrder = 23;
         private const int FrontWeaponOrder = 24;
 
         private readonly EquipmentCatalog catalog = new EquipmentCatalog();
         private readonly Dictionary<GearSlot, int> worn = new Dictionary<GearSlot, int>();
         private readonly List<SpriteRenderer> sideParts = new List<SpriteRenderer>();
-        private readonly SpriteRenderer hat;
-        private readonly SpriteRenderer hatBack;
         private readonly SpriteRenderer body;
         private readonly SpriteRenderer weapon;
         private readonly SpriteRenderer bareTorso;
@@ -116,22 +101,13 @@ namespace DaKiem.Client
         private readonly LimbStrip legNear;
         private readonly LimbStrip legFar;
         private readonly SkinnedShorts hip;
-        private readonly LimbStrip cape;
         private readonly FrontFigure front;
-        private readonly FrontLayer frontCape;
-        private readonly FrontLayer frontHatBack;
         private readonly FrontLayer frontPants;
         private readonly FrontLayer frontArmor;
-        private readonly FrontLayer frontHat;
         private readonly FrontLayer frontWeapon;
-        private readonly Vector2 capeRoot;
-        private float capeLength;
-        private Sprite bodySide;
-        private Sprite bodyOpen;
-        private Sprite bodyClosed;
+        private float bladeReach;
 
         public EquipmentView(
-            Transform head,
             Transform torso,
             Transform hand,
             SpriteRenderer bareTorso,
@@ -150,12 +126,9 @@ namespace DaKiem.Client
             this.hip = hip;
             this.front = front;
 
-            CharacterBone headBone = CharacterRig.Find(CharacterRig.Head);
             CharacterBone torsoBone = CharacterRig.Find(CharacterRig.Torso);
             CharacterBone handBone = CharacterRig.Find(CharacterRig.HandNear);
 
-            hat = AddSidePart("gear_hat", head, CharacterRig.Local(HatCentreX - headBone.JointX, HatCentreY - headBone.JointY), HatOrder);
-            hatBack = AddSidePart("gear_hat_back", head, hat.transform.localPosition, HatBackOrder);
             body = AddSidePart("gear_body", torso, CharacterRig.Local(BodyCentreX - torsoBone.JointX, BodyCentreY - torsoBone.JointY), BodyOrder);
 
             weaponPivot = new GameObject("gear_grip").transform;
@@ -163,18 +136,8 @@ namespace DaKiem.Client
             weaponPivot.localPosition = CharacterRig.Local(GripX - handBone.JointX, GripY - handBone.JointY);
             weapon = AddSidePart("gear_weapon", weaponPivot, CharacterRig.Local(0f, -GripToCanvasMiddle), WeaponOrder);
 
-            capeRoot = CharacterRig.Local(CapeRootX - torsoBone.JointX, CapeRootY - torsoBone.JointY);
-            if (catalog.ItemsIn(GearSlot.Cape).Count > 0)
-            {
-                Sprite firstCape = catalog.Find(GearSlot.Cape, catalog.ItemsIn(GearSlot.Cape)[0], "strip");
-                cape = new LimbStrip(firstCape, torso, CapeOrder, "gear_cape", 1f);
-            }
-
-            frontCape = front.AddLayer("cape", null, FrontCapeOrder);
-            frontHatBack = front.AddLayer("hat_back", null, FrontHatBackOrder);
             frontPants = front.AddLayer("pants", null, FrontPantsOrder);
             frontArmor = front.AddLayer("armor", null, FrontArmorOrder);
-            frontHat = front.AddLayer("hat", null, FrontHatOrder);
             frontWeapon = front.AddLayer("weapon", null, FrontWeaponOrder);
 
             foreach (GearSlot slot in Enum.GetValues(typeof(GearSlot)))
@@ -199,14 +162,6 @@ namespace DaKiem.Client
         public void Wear(GearSlot slot, int index)
         {
             IReadOnlyList<string> items = catalog.ItemsIn(slot);
-
-            // The sample character wears its clothes as part of the body.
-            if (items.Count == 0)
-            {
-                worn[slot] = 0;
-                return;
-            }
-
             int chosen = index % items.Count;
             string item = items[chosen];
             worn[slot] = chosen;
@@ -215,22 +170,14 @@ namespace DaKiem.Client
             {
                 case GearSlot.Weapon:
                     weapon.sprite = catalog.Find(slot, item, "side");
+                    bladeReach = FindBladeReach(weapon.sprite);
                     frontWeapon.Show(TextureOf(slot, item, "front"));
-                    break;
-                case GearSlot.Hat:
-                    hat.sprite = catalog.Find(slot, item, "side");
-                    hatBack.sprite = catalog.Find(slot, item, "back");
-                    frontHat.Show(TextureOf(slot, item, "front"));
-                    frontHatBack.Show(TextureOf(slot, item, "frontback"));
                     break;
                 case GearSlot.Armor:
                     // A hard sleeve is armour: it folds at the elbow instead of curving.
                     Sprite hardSleeve = catalog.Find(slot, item, "sleevehard");
                     Sprite sleeve = hardSleeve != null ? hardSleeve : catalog.Find(slot, item, "sleeve");
                     body.sprite = catalog.Find(slot, item, "body");
-                    bodySide = body.sprite;
-                    bodyOpen = Resources.Load<Sprite>($"Character/Turns/armor_{item}_open");
-                    bodyClosed = Resources.Load<Sprite>($"Character/Turns/armor_{item}_closed");
                     bareTorso.enabled = false;
                     armNear.SetImage(sleeve);
                     armFar.SetImage(sleeve);
@@ -245,20 +192,14 @@ namespace DaKiem.Client
                     legFar.SetImage(leg);
                     frontPants.Show(TextureOf(slot, item, "front"));
                     break;
-                case GearSlot.Cape:
-                    Sprite strip = catalog.Find(slot, item, "strip");
-                    cape.SetImage(strip);
-                    capeLength = strip.texture.height / strip.pixelsPerUnit;
-                    frontCape.Show(TextureOf(slot, item, "front"));
-                    break;
             }
         }
 
         public Vector3 GripPoint => weaponPivot.position;
         public Vector3 SecondHandPoint => weaponPivot.TransformPoint(Vector3.down * SecondHandDrop);
         public bool HasWeapon => weapon.sprite != null;
-        public Vector3 BladeInnerPoint => weaponPivot.TransformPoint(Vector3.up * BladeInner);
-        public Vector3 BladeOuterPoint => weaponPivot.TransformPoint(Vector3.up * BladeOuter);
+        public Vector3 BladeInnerPoint => weaponPivot.TransformPoint(Vector3.up * bladeReach * BladeInnerShare);
+        public Vector3 BladeOuterPoint => weaponPivot.TransformPoint(Vector3.up * bladeReach);
 
         /// <summary>Turns the weapon around the fist; negative tips it forward of the forearm.</summary>
         public bool TurnWeapon(float degrees)
@@ -274,20 +215,14 @@ namespace DaKiem.Client
             // silhouette reads as a wrist roll instead of an instantaneous image flip.
             float width = Mathf.Cos(degrees * Mathf.Deg2Rad);
             if (Mathf.Abs(width) < 0.08f) width = width < 0f ? -0.08f : 0.08f;
-            weapon.transform.localScale = new Vector3(width, 1f, 1f);
+            // The swords are drawn bowing left, and the bowed side is the cutting edge. Mirrored,
+            // the edge leads a right-facing swing.
+            weapon.transform.localScale = new Vector3(-width, 1f, 1f);
         }
 
         public void TwistBody(float amount)
         {
-            Sprite selected = amount > 0.35f ? bodyOpen : amount < -0.35f ? bodyClosed : bodySide;
-            body.sprite = selected != null ? selected : bodySide;
             body.transform.localScale = new Vector3(1f + 0.12f * Mathf.Abs(amount), 1f, 1f);
-        }
-
-        /// <summary>Hangs the cape from the shoulders. Angles are measured from straight down.</summary>
-        public void PoseCape(float upperAngle, float lowerAngle, float ripple, float ripplePhase)
-        {
-            cape?.Drape(capeRoot, capeLength, upperAngle, lowerAngle, ripple, ripplePhase);
         }
 
         public void Tint(Color color, float sideAlpha)
@@ -296,8 +231,26 @@ namespace DaKiem.Client
             {
                 part.color = new Color(color.r, color.g, color.b, sideAlpha);
             }
+        }
 
-            cape?.Tint(color, sideAlpha);
+        /// <summary>How far the tip of a weapon's drawing lies from the fist, in world units.</summary>
+        private float FindBladeReach(Sprite sprite)
+        {
+            Texture2D texture = sprite.texture;
+            Color32[] pixels = texture.GetPixels32();
+
+            for (int y = texture.height - 1; y >= 0; y--)
+            {
+                for (int x = 0; x < texture.width; x++)
+                {
+                    if (pixels[y * texture.width + x].a > SolidAlpha)
+                    {
+                        return weapon.transform.localPosition.y + (y - sprite.pivot.y) / sprite.pixelsPerUnit;
+                    }
+                }
+            }
+
+            return 0f;
         }
 
         private Texture TextureOf(GearSlot slot, string item, string part)

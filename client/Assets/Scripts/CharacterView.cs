@@ -69,17 +69,14 @@ namespace DaKiem.Client
         private const int HairTurn = 13;
         private const int TailBaseTurn = 14;
         private const int TailTipTurn = 15;
-        private const int CapeUpper = 16;
-        private const int CapeLower = 17;
-        private const int WeaponTurn = 18;
-        private const int CapeRipple = 19;
-        private const int AttackHipDrop = 20;
-        private const int AttackNearAnkle = 21;
-        private const int AttackFarAnkle = 22;
-        private const int AttackStep = 23;
-        private const int BodyYaw = 24;
-        private const int WeaponRoll = 25;
-        private const int ChannelCount = 26;
+        private const int WeaponTurn = 16;
+        private const int AttackHipDrop = 17;
+        private const int AttackNearAnkle = 18;
+        private const int AttackFarAnkle = 19;
+        private const int AttackStep = 20;
+        private const int BodyYaw = 21;
+        private const int WeaponRoll = 22;
+        private const int ChannelCount = 23;
 
         // How fast each channel closes on its target, per second.
         private const float LegEase = 45f;
@@ -90,10 +87,7 @@ namespace DaKiem.Client
         private const float HairEase = 8f;
         private const float TailBaseEase = 9f;
         private const float TailTipEase = 6f;
-        private const float CapeUpperEase = 8f;
-        private const float CapeLowerEase = 5f;
         private const float WeaponEase = 24f;
-        private const float CapeRippleEase = 4f;
         private const float AttackBodyEase = 32f;
 
         // Arms and body snap into an attack or a hit far faster than they settle afterwards.
@@ -156,19 +150,6 @@ namespace DaKiem.Client
         private const float CarryWeapon = -30f;
         private const float DashWeapon = 100f;
 
-        private const float CapeRestUpper = -6f;
-        private const float CapeRestLower = -2f;
-        private const float CapeRunUpper = -40f;
-        private const float CapeRunLower = -68f;
-        private const float CapeDashUpper = -72f;
-        private const float CapeDashLower = -96f;
-        private const float CapeFallUpper = -70f;
-        private const float CapeFallLower = -140f;
-        private const float CapeRestRipple = 2.5f;
-        private const float CapeRunRipple = 16f;
-        private const float CapeAirRipple = 12f;
-        private const float CapeRipplesPerSecondAtRest = 0.5f;
-        private const float CapeRipplesPerSecondAtRun = 2.4f;
         private const float FrontShowsBelowRun = 0.15f;
 
         private const float FrontBreathsPerSecond = 0.42f;
@@ -256,7 +237,6 @@ namespace DaKiem.Client
         private float nearThigh;
         private float farThigh;
         private float actionBoost = 1f;
-        private float capeRipplePhase;
         private int stanceRow;
         private CastPhase stanceStage;
         private float impactDelay;
@@ -326,7 +306,6 @@ namespace DaKiem.Client
             }
 
             equipment = new EquipmentView(
-                joints[CharacterRig.Head],
                 joints[CharacterRig.Torso],
                 joints[CharacterRig.HandNear],
                 torsoRenderer,
@@ -340,7 +319,6 @@ namespace DaKiem.Client
             LimbShape leg = shapes[CharacterRig.LegNear];
             standingLegLength = (leg.Upper + leg.Lower) / CharacterRig.LegScale;
             BuildGroundPose();
-            BuildCape(true, 0f, false);
             stanceStage = CastPhase.None;
             BuildAction(false, false, true);
             target.CopyTo(current, 0);
@@ -433,8 +411,6 @@ namespace DaKiem.Client
             actionAge += deltaTime;
             returnAge += deltaTime;
             BuildAction(hurt, dashing, grounded);
-            BuildCape(grounded, verticalSpeed, dashing);
-            capeRipplePhase += Mathf.Lerp(CapeRipplesPerSecondAtRest, CapeRipplesPerSecondAtRun, runAmount) * Mathf.PI * 2f * deltaTime;
             EaseToTarget(ImpactHolding(deltaTime) ? 0f : deltaTime);
             if (grounded && !dashing)
             {
@@ -573,7 +549,6 @@ namespace DaKiem.Client
                 : pose == CharacterPose.Windup2 || pose == CharacterPose.Strike2 ? 1
                 : 0;
             BuildAction(pose == CharacterPose.Hurt, pose == CharacterPose.Dash, !inAir);
-            BuildCape(!inAir, pose == CharacterPose.Fall ? -RiseSpeed : RiseSpeed, pose == CharacterPose.Dash);
             target.CopyTo(current, 0);
             Apply();
             actionBoost = 1f;
@@ -735,36 +710,6 @@ namespace DaKiem.Client
             target[HeadTurn] = head;
         }
 
-        private void BuildCape(bool grounded, float verticalSpeed, bool dashing)
-        {
-            float upper;
-            float lower;
-            float ripple = CapeAirRipple;
-
-            if (dashing)
-            {
-                upper = CapeDashUpper;
-                lower = CapeDashLower;
-            }
-            else if (!grounded)
-            {
-                float fall = Mathf.InverseLerp(0f, -RiseSpeed, verticalSpeed);
-                upper = Mathf.Lerp(CapeRunUpper / 2f, CapeFallUpper, fall);
-                lower = Mathf.Lerp(CapeRunLower / 2f, CapeFallLower, fall);
-            }
-            else
-            {
-                float speed = runAmount * Mathf.Lerp(0.45f, 1f, gait);
-                upper = Mathf.Lerp(CapeRestUpper, CapeRunUpper, speed);
-                lower = Mathf.Lerp(CapeRestLower, CapeRunLower, speed);
-                ripple = Mathf.Lerp(CapeRestRipple, CapeRunRipple, speed);
-            }
-
-            target[CapeUpper] = upper;
-            target[CapeLower] = lower;
-            target[CapeRipple] = ripple;
-        }
-
         private void OffsetAirAnkles()
         {
             target[NearAnkleY] -= 40f / CharacterRigScale.LayoutPixelsPerUnit;
@@ -875,8 +820,6 @@ namespace DaKiem.Client
             equipment.TwistBody(current[BodyYaw]);
             equipment.RollWeapon(current[WeaponRoll]);
 
-            // The cape hangs from the torso but falls with gravity, so the torso's lean is taken out.
-            equipment.PoseCape(current[CapeUpper] - current[TorsoTurn], current[CapeLower] - current[TorsoTurn], current[CapeRipple], capeRipplePhase);
             float shoulder = current[NearShoulder];
             float elbow = current[NearElbow];
             // Retain the previous correction and release it gradually. Searching near
@@ -1081,7 +1024,7 @@ namespace DaKiem.Client
             {
                 HipEase, LegEase, LegEase, LegEase, LegEase, LegEase, LegEase, ArmEase,
                 ArmEase, ArmEase, ArmEase, TorsoEase, HeadEase, HairEase, TailBaseEase, TailTipEase,
-                CapeUpperEase, CapeLowerEase, WeaponEase, CapeRippleEase,
+                WeaponEase,
                 AttackBodyEase, AttackBodyEase, AttackBodyEase, AttackBodyEase,
                 22f, 42f,
             };
