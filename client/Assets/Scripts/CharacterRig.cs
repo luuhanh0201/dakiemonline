@@ -94,33 +94,36 @@ namespace DaKiem.Client
         public const string LegNear = "leg_near";
         public const string LegFar = "leg_far";
 
-        private const float UpperArm = 81f;
-        private const float Forearm = 78f;
-        private const float Thigh = 135f;
-        private const float Shin = 120f;
+        private const float UpperArm = 85f;
+        private const float Forearm = 85f;
+        private const float Thigh = 95f;
+        private const float Shin = 95f;
+
+        // Leg poses are written for a leg 255 layout pixels long and scaled to the drawn leg.
+        public const float LegScale = (Thigh + Shin) / 255f;
 
         // Parents come before their children. Hands and feet are placed each frame.
         public static readonly CharacterBone[] Bones =
         {
-            new CharacterBone(Hip, null, "shorts", 310f, 470f, 310f, 482f, 23),
-            new CharacterBone(Torso, Hip, "torso", 310f, 440f, 310f, 323f, 18),
-            new CharacterBone(Head, Torso, "head", 305f, 250f, 310f, 145f, 26),
-            new CharacterBone("hair_front", Head, "hair_front", 305f, 250f, 300f, 127f, 27),
-            new CharacterBone(HairBack, Head, "hair_back", 300f, 60f, 275f, 139f, 13),
-            new CharacterBone(TailBase, Head, "tail_base", 240f, 175f, 215f, 194f, 12),
-            new CharacterBone(TailTip, TailBase, "tail_tip", 205f, 180f, 170f, 192f, 11),
-            new CharacterBone(HandFar, Torso, "hand_far", 330f, 520f, 335f, 561f, 8),
-            new CharacterBone(FootFar, Hip, "foot", 320f, 735f, 345f, 768f, 15),
-            new CharacterBone(FootNear, Hip, "foot", 300f, 735f, 325f, 768f, 21),
-            new CharacterBone(HandNear, Torso, "hand_fist", 285f, 520f, 295f, 543f, 30),
+            new CharacterBone(Hip, null, "shorts", 310f, 530f, 310f, 560f, 23),
+            new CharacterBone(Torso, Hip, "torso", 310f, 500f, 310f, 492f, 24),
+            new CharacterBone(Head, Torso, "head", 312f, 372f, 325f, 210f, 28),
+            new CharacterBone("hair_front", Head, "hair_front", 312f, 372f, 372f, 150f, 29),
+            new CharacterBone(HairBack, Head, "hair_back", 270f, 120f, 290f, 205f, 13),
+            new CharacterBone(TailBase, Head, "tail_base", 205f, 60f, 125f, 5f, 12),
+            new CharacterBone(TailTip, TailBase, "tail_tip", 190f, 40f, 72f, 150f, 11),
+            new CharacterBone(HandFar, Torso, "hand_far", 330f, 520f, 340f, 543f, 27),
+            new CharacterBone(FootFar, Hip, "foot", 340f, 745f, 368f, 751f, 15),
+            new CharacterBone(FootNear, Hip, "foot", 285f, 745f, 313f, 751f, 21),
+            new CharacterBone(HandNear, Torso, "hand_fist", 285f, 520f, 295f, 543f, 31),
         };
 
         public static readonly CharacterLimb[] Limbs =
         {
-            new CharacterLimb(ArmFar, Torso, "arm", 322f, 292f, UpperArm, Forearm, 9),
-            new CharacterLimb(LegFar, Hip, "leg", 320f, 480f, Thigh, Shin, 16),
-            new CharacterLimb(LegNear, Hip, "leg", 300f, 480f, Thigh, Shin, 22),
-            new CharacterLimb(ArmNear, Torso, "arm", 300f, 292f, UpperArm, Forearm, 29),
+            new CharacterLimb(ArmFar, Torso, "arm", 372f, 405f, UpperArm, Forearm, 25),
+            new CharacterLimb(LegFar, Hip, "leg", 340f, 555f, Thigh, Shin, 16),
+            new CharacterLimb(LegNear, Hip, "leg", 285f, 555f, Thigh, Shin, 22),
+            new CharacterLimb(ArmNear, Torso, "arm", 250f, 405f, UpperArm, Forearm, 30),
         };
 
         public static CharacterBone Find(string name)

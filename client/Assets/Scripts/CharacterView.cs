@@ -50,7 +50,7 @@ namespace DaKiem.Client
     /// </summary>
     public sealed class CharacterView
     {
-        private const string SpriteFolder = "Character/Base/";
+        private const string SpriteFolder = "Character/Bold/";
 
         // Pose channels. Legs are stored as the ankle's place relative to the hip.
         private const int HipDrop = 0;
@@ -139,8 +139,12 @@ namespace DaKiem.Client
         private const float RestElbow = 10f;
         private const float RestArm = 2f;
 
+        // The pose changes this many times a second and holds between, like drawn frames. The body
+        // still travels smoothly; only its shape steps.
+        private const float PoseFramesPerSecond = 12f;
+
         // A temporary single image until the layered front-view parts exist.
-        private const string FrontSprite = "front_idle";
+        private const string FrontSprite = "Character/Base/front_idle";
         private const int FrontOrder = 20;
         private const float FrontHeightUnits = 1f;
 
@@ -176,12 +180,15 @@ namespace DaKiem.Client
         private const float TurnSwapPoint = 0.5f;
         private const float FlipDip = 0.03f;
 
-        // Parts on the far side of the body are darker, which separates them from the near side.
-        private const float FarShade = 0.82f;
+        // The far hand ends at the wrist; its fist lies this much further on, in layout pixels.
+        private const float FistReach = 25f;
 
-        private const float ShadowOpacity = 0.4f;
+        // Parts on the far side of the body are darker, which separates them from the near side.
+        private const float FarShade = 0.9f;
+
+        private const float ShadowOpacity = 0.65f;
         private const float ShadowWidth = 0.8f;
-        private const float ShadowHeight = 0.16f;
+        private const float ShadowHeight = 0.2f;
         private const float ShadowLift = 0.01f;
         private const float ShadowFadeHeight = 2.5f;
         private const int ShadowOrder = 5;
@@ -192,7 +199,6 @@ namespace DaKiem.Client
         private const float StraightLimbMargin = 0.001f;
 
         private static readonly Color HurtTint = new Color32(0xFF, 0x8A, 0x8A, 0xFF);
-        private static readonly Color WindupTint = new Color32(0xC8, 0xDC, 0xFF, 0xFF);
 
         // Knee drawn up in front, back leg trailing, arms driving upward.
         private static readonly float[] RisePose =
@@ -264,6 +270,7 @@ namespace DaKiem.Client
         private float armReach;
         private float wristClearance;
         private float poseDeltaTime = 1f / 60f;
+        private float poseFrameLeft;
         private float frontAmount;
         private float frontAlpha;
         private float sideAlpha = 1f;
@@ -295,7 +302,7 @@ namespace DaKiem.Client
             rig = new GameObject("Rig").transform;
             rig.SetParent(root, false);
 
-            Sprite frontImage = Resources.Load<Sprite>(SpriteFolder + FrontSprite);
+            Sprite frontImage = Resources.Load<Sprite>(FrontSprite);
             float frontWidth = FrontHeightUnits * frontImage.texture.width / frontImage.texture.height;
             front = new FrontFigure("FrontFigure", root, frontWidth, FrontHeightUnits, Vector2.one);
             front.AddLayer("body", frontImage.texture, FrontOrder);
@@ -331,7 +338,7 @@ namespace DaKiem.Client
                 frontGear);
 
             LimbShape leg = shapes[CharacterRig.LegNear];
-            standingLegLength = leg.Upper + leg.Lower;
+            standingLegLength = (leg.Upper + leg.Lower) / CharacterRig.LegScale;
             BuildGroundPose();
             BuildCape(true, 0f, false);
             stanceStage = CastPhase.None;
@@ -406,7 +413,7 @@ namespace DaKiem.Client
             if (running)
             {
                 gait = Mathf.MoveTowards(gait, Mathf.InverseLerp(2f, 4f, moved / deltaTime), 6f * deltaTime);
-                runCycle = Mathf.Repeat(runCycle + moved / (2f * Reach / Stance), 1f);
+                runCycle = Mathf.Repeat(runCycle + moved / (2f * Reach * CharacterRig.LegScale / Stance), 1f);
             }
             runAmount = Mathf.MoveTowards(runAmount, running ? 1f : 0f, RunBlendSpeed * deltaTime);
             landing *= Mathf.Exp(-LandingRecovery * deltaTime);
@@ -418,6 +425,7 @@ namespace DaKiem.Client
             if (stanceStage != previousActionStage || stanceRow != previousActionRow)
             {
                 actionAge = 0f;
+                poseFrameLeft = 0f;
                 if (stanceStage == CastPhase.None && previousActionStage != CastPhase.None) returnAge = 0f;
                 previousActionStage = stanceStage;
                 previousActionRow = stanceRow;
@@ -444,7 +452,12 @@ namespace DaKiem.Client
                 current[NearFoot] = target[NearFoot];
                 current[FarFoot] = target[FarFoot];
             }
-            Apply();
+            poseFrameLeft -= deltaTime;
+            if (poseFrameLeft <= 0f)
+            {
+                poseFrameLeft = 1f / PoseFramesPerSecond;
+                Apply();
+            }
             trail.Show(
                 stanceStage == CastPhase.Active,
                 equipment.GripPoint,
@@ -470,7 +483,7 @@ namespace DaKiem.Client
 
             ShowTurn();
             ShowShadow(feet.x, feet.y - groundY);
-            Tint(hurt ? HurtTint : phase == CastPhase.Windup ? WindupTint : Color.white);
+            Tint(hurt ? HurtTint : Color.white);
         }
 
         /// <summary>
@@ -507,7 +520,7 @@ namespace DaKiem.Client
             shadowRenderer.color = new Color(0f, 0f, 0f, ShadowOpacity * Mathf.Lerp(0.4f, 1f, closeness));
         }
 
-        private static Sprite CreateShadowSprite()
+        public static Sprite CreateShadowSprite()
         {
             var texture = new Texture2D(ShadowTextureSize, ShadowTextureSize, TextureFormat.RGBA32, false);
             float middle = (ShadowTextureSize - 1) / 2f;
@@ -844,7 +857,7 @@ namespace DaKiem.Client
             // strike could make the tip reverse even while the arm keeps moving.
             if (stanceStage != CastPhase.Active) wristClearance *= Mathf.Exp(-12f * poseDeltaTime);
             rig.localPosition = Vector3.right * current[AttackStep];
-            joints[CharacterRig.Hip].localPosition = restPositions[CharacterRig.Hip] + Vector3.down * (current[HipDrop] + current[AttackHipDrop]);
+            joints[CharacterRig.Hip].localPosition = restPositions[CharacterRig.Hip] + Vector3.down * ((current[HipDrop] + current[AttackHipDrop]) * CharacterRig.LegScale);
 
             // The ankles rise with a lowered hip, so the feet stay on the ground.
             float braced = current[AttackHipDrop];
@@ -911,6 +924,32 @@ namespace DaKiem.Client
                     }
                 }
             }
+
+            HoldHandle();
+        }
+
+        /// <summary>The far arm reaches for the handle, so both fists stay on the sword.</summary>
+        private void HoldHandle()
+        {
+            LimbShape shape = shapes[CharacterRig.ArmFar];
+            Vector2 shoulder = shape.Root + Vector2.right * current[BodyYaw] * 0.028f;
+            Vector2 handle = joints[CharacterRig.Torso].InverseTransformPoint(equipment.SecondHandPoint);
+            Vector2 way = (handle - shoulder).normalized;
+            float fist = FistReach / CharacterRigScale.LayoutPixelsPerUnit;
+            float reach = Mathf.Clamp(
+                Vector2.Distance(handle, shoulder) - fist,
+                StraightLimbMargin,
+                shape.Upper + shape.Lower - StraightLimbMargin);
+            float along = (shape.Upper * shape.Upper - shape.Lower * shape.Lower + reach * reach) / (2f * reach);
+            float rise = Mathf.Sqrt(Mathf.Max(0f, shape.Upper * shape.Upper - along * along));
+
+            // The elbow always drops below the line from shoulder to fist.
+            Vector2 down = new Vector2(way.y, -way.x);
+            if (down.y > 0f) down = -down;
+
+            limbs[CharacterRig.ArmFar].Bend(shoulder, shoulder + way * along + down * rise, shoulder + way * reach);
+            joints[CharacterRig.HandFar].localPosition = shoulder + way * reach;
+            Turn(CharacterRig.HandFar, Mathf.Atan2(way.x, -way.y) * Mathf.Rad2Deg);
         }
 
         private bool TryClearArm(float shoulder, float elbow, float preferred)
@@ -933,6 +972,7 @@ namespace DaKiem.Client
         private void PoseLeg(string leg, string foot, Vector2 ankle, float footPitch)
         {
             LimbShape shape = shapes[leg];
+            ankle *= CharacterRig.LegScale;
             float reach = Mathf.Clamp(ankle.magnitude, Mathf.Abs(shape.Upper - shape.Lower) + StraightLimbMargin, shape.Upper + shape.Lower - StraightLimbMargin);
             float hipOpen = Mathf.Acos(Mathf.Clamp(
                 (shape.Upper * shape.Upper + reach * reach - shape.Lower * shape.Lower) / (2f * shape.Upper * reach),

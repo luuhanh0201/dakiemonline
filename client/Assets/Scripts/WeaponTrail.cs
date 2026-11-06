@@ -85,7 +85,8 @@ namespace DaKiem.Client
             {
                 strength = opacity;
 
-                if (wasDrawing)
+                // The pose only changes on its own frames, and a repeat would push the arc out.
+                if (wasDrawing && bladeOuter != lastOuter)
                 {
                     FillArc(grip, bladeInner, bladeOuter, sweep);
                 }

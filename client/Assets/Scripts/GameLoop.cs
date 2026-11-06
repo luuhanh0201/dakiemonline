@@ -65,7 +65,7 @@ namespace DaKiem.Client
             input = new InputReader(hud);
             view = new WorldView(config.MapBoxes);
             character = new CharacterView();
-            bossView = new BossView(view, config.Boss);
+            bossView = new BossView();
             fx = new FxView(view);
             StartFight();
         }

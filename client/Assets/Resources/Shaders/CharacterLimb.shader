@@ -6,8 +6,8 @@ Shader "DaKiem/CharacterLimb"
     {
         _MainTex ("Part", 2D) = "white" {}
         _Color ("Tint", Color) = (1, 1, 1, 1)
-        _Dark ("Shaded side", Float) = 0.72
-        _Light ("Lit side", Float) = 1.12
+        _Dark ("Shaded side", Float) = 1
+        _Light ("Lit side", Float) = 1
     }
 
     SubShader

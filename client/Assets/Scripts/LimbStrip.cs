@@ -17,9 +17,6 @@ namespace DaKiem.Client
         // How many turns of a ripple fit along a draped strip.
         private const float RippleTurns = 1.4f;
 
-        // The drawn limbs read too thin next to the head at game size.
-        private const float WidthScale = 1.35f;
-
         private readonly Mesh mesh = new Mesh();
         private readonly Material material;
         private readonly Vector3[] vertices = new Vector3[(Rows + 1) * 2];
@@ -50,7 +47,7 @@ namespace DaKiem.Client
         public void SetImage(Sprite limb)
         {
             material.mainTexture = limb.texture;
-            halfWidth = limb.texture.width / limb.pixelsPerUnit * WidthScale / 2f;
+            halfWidth = limb.texture.width / limb.pixelsPerUnit / 2f;
         }
 
         /// <summary>A stiff drawing folds sharply at the joint instead of curving like cloth.</summary>
