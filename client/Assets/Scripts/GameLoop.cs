@@ -16,6 +16,7 @@ namespace DaKiem.Client
         private InputReader input;
         private HudView hud;
         private WorldView view;
+        private CharacterView character;
         private BossView bossView;
         private FxView fx;
         private GameConfig config;
@@ -62,7 +63,8 @@ namespace DaKiem.Client
 
             hud = new HudView();
             input = new InputReader(hud);
-            view = new WorldView(config.MapBoxes, config.Movement);
+            view = new WorldView(config.MapBoxes);
+            character = new CharacterView();
             bossView = new BossView(view, config.Boss);
             fx = new FxView(view);
             StartFight();
@@ -120,7 +122,17 @@ namespace DaKiem.Client
             float blend = accumulator / (float)Ticks.DeltaSeconds;
 
             fx.Show(fight, config.Boss);
-            view.Show(Vector2.Lerp(previousFeet, currentFeet, blend), fight.Player.Facing, fight.Combat.Phase, fx.PlayerHurt);
+            Vector2 feet = Vector2.Lerp(previousFeet, currentFeet, blend);
+
+            view.Follow(feet, fight.Player.Facing);
+            character.Show(
+                feet,
+                fight.Player.Facing,
+                fight.Player.Grounded,
+                (float)fight.Player.VelocityY,
+                fight.Player.IsDashing,
+                fight.Combat.Phase,
+                fx.PlayerHurt);
             bossView.Show(Mathf.Lerp(previousBossX, currentBossX, blend), fight);
         }
 

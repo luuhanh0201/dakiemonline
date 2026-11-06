@@ -14,7 +14,7 @@ Phạm vi hiện tại: mốc 0.5, bản thử Android không có mạng.
 
 ## Kiểm tra
 - Thay đổi luật phải có test và chạy dotnet test.
-- Thay đổi cảm giác chơi phải thử trên điện thoại.
+- Thay đổi cảm giác chơi phải build bản PC bằng tools/build-pc.ps1 và thử trên máy tính trước, đạt rồi mới thử trên điện thoại.
 - Báo cáo phải ghi rõ phần chưa kiểm tra.
 
 ## Tài liệu

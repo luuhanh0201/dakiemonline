@@ -1,16 +1,23 @@
 using Game.Rules;
 using UnityEngine;
+#if UNITY_STANDALONE
+using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.Controls;
+#endif
 using UnityEngine.InputSystem.EnhancedTouch;
 using Touch = UnityEngine.InputSystem.EnhancedTouch.Touch;
 using TouchPhase = UnityEngine.InputSystem.TouchPhase;
 
 namespace DaKiem.Client
 {
-    /// <summary>Turns touches into joystick tilt and button presses.</summary>
+    /// <summary>Turns touches, and on the PC build the keyboard, into joystick tilt and button presses.</summary>
     public sealed class InputReader
     {
         private const float DeadZone = 0.1f;
         private const int NoFinger = -1;
+#if UNITY_STANDALONE
+        private const double KeyboardWalkTilt = 0.3d;
+#endif
 
         private readonly HudView hud;
         private int joystickFinger = NoFinger;
@@ -24,6 +31,10 @@ namespace DaKiem.Client
         {
             this.hud = hud;
             EnhancedTouchSupport.Enable();
+#if UNITY_STANDALONE
+            // Lets the mouse press the on-screen buttons and drag the joystick.
+            TouchSimulation.Enable();
+#endif
         }
 
         public double MoveX { get; private set; }
@@ -48,6 +59,10 @@ namespace DaKiem.Client
                         break;
                 }
             }
+
+#if UNITY_STANDALONE
+            ReadKeyboard();
+#endif
         }
 
         /// <summary>Returns true once per press, so a press between two ticks is not lost.</summary>
@@ -102,11 +117,60 @@ namespace DaKiem.Client
                 return;
             }
 
+            PressButton(button);
+        }
+
+        private void PressButton(HudButton button)
+        {
             hud.Flash(button);
             dashPressed |= button == HudButton.Dash;
             potionPressed |= button == HudButton.Potion;
             skillPressed = HudLayout.SlotOf(button) ?? skillPressed;
         }
+
+#if UNITY_STANDALONE
+        private void ReadKeyboard()
+        {
+            Keyboard keys = Keyboard.current;
+
+            if (keys == null)
+            {
+                return;
+            }
+
+            if (joystickFinger == NoFinger)
+            {
+                double way = (keys.dKey.isPressed || keys.rightArrowKey.isPressed ? 1d : 0d)
+                    - (keys.aKey.isPressed || keys.leftArrowKey.isPressed ? 1d : 0d);
+
+                MoveX = keys.leftCtrlKey.isPressed ? way * KeyboardWalkTilt : way;
+                MoveY = keys.wKey.isPressed || keys.upArrowKey.isPressed || keys.spaceKey.isPressed ? 1d : 0d;
+            }
+
+            if (hud.EndScreenVisible)
+            {
+                replayPressed |= keys.enterKey.wasPressedThisFrame;
+                return;
+            }
+
+            PressOnKey(keys.jKey, HudButton.Attack);
+            PressOnKey(keys.lKey, HudButton.Dash);
+            PressOnKey(keys.kKey, HudButton.Ranged);
+            PressOnKey(keys.uKey, HudButton.SkillA);
+            PressOnKey(keys.iKey, HudButton.SkillB);
+            PressOnKey(keys.oKey, HudButton.Heal);
+            PressOnKey(keys.pKey, HudButton.Ultimate);
+            PressOnKey(keys.hKey, HudButton.Potion);
+        }
+
+        private void PressOnKey(KeyControl key, HudButton button)
+        {
+            if (key.wasPressedThisFrame)
+            {
+                PressButton(button);
+            }
+        }
+#endif
 
         private void MoveTouch(Touch touch)
         {

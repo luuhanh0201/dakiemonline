@@ -7,8 +7,8 @@ namespace DaKiem.Client
     /// <summary>Placeholder effects: blocks for hit areas and projectiles, a flash for healing.</summary>
     public sealed class FxView
     {
-        private const int SortingOrder = 3;
-        private const int WarningOrder = 4;
+        private const int SortingOrder = 40;
+        private const int WarningOrder = 41;
         private const float HurtFlashSeconds = 0.2f;
         private const float HealFlashSeconds = 0.3f;
         private const float HealFlashSize = 1.6f;

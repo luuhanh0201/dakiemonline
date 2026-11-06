@@ -62,7 +62,14 @@ namespace DaKiem.Client
             new HudButtonSpec(HudButton.Potion, "Thuốc", SkillDp, OuterArcDp, 88f),
         };
 
+#if UNITY_STANDALONE
+        // A desktop window has no meaningful dpi, so scale it to match the phone's layout.
+        private const float PhoneHeightDp = 393f;
+
+        public static float DpToPixels => Screen.height / PhoneHeightDp;
+#else
         public static float DpToPixels => (Screen.dpi > 0f ? Screen.dpi : BaselineDpi) / BaselineDpi;
+#endif
 
         /// <summary>The combat slot a button casts, or null for dash and potion.</summary>
         public static SkillSlot? SlotOf(HudButton button)
