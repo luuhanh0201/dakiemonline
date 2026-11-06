@@ -17,7 +17,18 @@
       "activePhases": [
         { "durationSec": 0.1, "damagePercent": 100 }
       ],
-      "hitbox": { "width": 1.5, "height": 1, "pierce": false }
+      "hitbox": { "width": 1.5, "height": 1, "pierce": false },
+      "combo": {
+        "id": "thuy.danh_thuong.combo",
+        "status": "DE_XUAT",
+        "source": "Yeu cau nguoi dung 06/11/2026: combo 3 don, don 3 cao hon; so la de xuat",
+        "windowSec": 0.5,
+        "hits": [
+          { "damagePercent": 100 },
+          { "damagePercent": 100 },
+          { "damagePercent": 130 }
+        ]
+      }
     },
     {
       "id": "thuy.kiem_khi",

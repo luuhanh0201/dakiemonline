@@ -16,7 +16,7 @@ $arguments = @(
     '-logFile', "`"$LogFile`""
 )
 
-$process = Start-Process -FilePath $Unity -ArgumentList $arguments -Wait -PassThru
+$process = Start-Process -FilePath $Unity -ArgumentList $arguments -WindowStyle Hidden -Wait -PassThru
 if ($process.ExitCode -ne 0) { throw "PC build failed, see $LogFile" }
 
 Write-Output "Built $(Join-Path $root 'client/Builds/PC/DaKiemOnline.exe')"

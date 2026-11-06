@@ -46,6 +46,16 @@ namespace Game.Rules
         public double DurationSec { get; set; }
     }
 
+    /// <summary>Presses in a row that step through a chain of hits.</summary>
+    public sealed class SkillCombo : ConfigEntry
+    {
+        /// <summary>How long after a hit's cast ends the next press still continues the chain.</summary>
+        public double WindowSec { get; set; }
+
+        /// <summary>Damage of each hit in the chain, as a percent of the skill's normal damage.</summary>
+        public IReadOnlyList<decimal> HitDamagePercents { get; set; } = Array.Empty<decimal>();
+    }
+
     public sealed class SkillConfig : ConfigEntry
     {
         public SkillSlot Slot { get; set; }
@@ -70,6 +80,7 @@ namespace Game.Rules
         public SkillProjectile? Projectile { get; set; }
         public SkillHeal? Heal { get; set; }
         public SkillSlow? Slow { get; set; }
+        public SkillCombo? Combo { get; set; }
 
         public bool DealsDamage => BaseDamage > 0m || AttackCoefficient > 0m;
     }

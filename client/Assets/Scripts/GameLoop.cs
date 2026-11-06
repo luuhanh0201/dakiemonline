@@ -122,9 +122,14 @@ namespace DaKiem.Client
             float blend = accumulator / (float)Ticks.DeltaSeconds;
 
             fx.Show(fight, config.Boss);
+            ShowImpacts();
             Vector2 feet = Vector2.Lerp(previousFeet, currentFeet, blend);
 
             view.Follow(feet, fight.Player.Facing);
+#if UNITY_STANDALONE
+            GearSlot? changed = input.ConsumeGearChange();
+            if (changed.HasValue) character.WearNext(changed.Value);
+#endif
             character.Show(
                 feet,
                 fight.Player.Facing,
@@ -132,8 +137,23 @@ namespace DaKiem.Client
                 (float)fight.Player.VelocityY,
                 fight.Player.IsDashing,
                 fight.Combat.Phase,
-                fx.PlayerHurt);
+                fx.PlayerHurt,
+                swing: SwingMoment.Of(fight.Combat));
             bossView.Show(Mathf.Lerp(previousBossX, currentBossX, blend), fight);
+        }
+
+        /// <summary>Only the picture reacts to a landed blow: the fight itself never pauses.</summary>
+        private void ShowImpacts()
+        {
+            foreach (CombatEvent item in fight.CombatEvents)
+            {
+                if (item.Kind == CombatEventKind.SkillHit
+                    && item.Slot != null
+                    && character.ReactToHit(item, config.Skill(item.Slot.Value), fight.Combat.ComboStep))
+                {
+                    view.Shake();
+                }
+            }
         }
 
         private void ShowHud()

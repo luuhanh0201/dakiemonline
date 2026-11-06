@@ -12,6 +12,9 @@ namespace DaKiem.Client
         private const float LookAhead = 0.1f * ViewWidth;
         private const float GroundMargin = 1.1f;
         private const float CameraSmoothing = 6f;
+        private const float ShakeSeconds = 0.2f;
+        private const float ShakeSize = 0.09f;
+        private const float ShakeTurnsPerSecond = 16f;
 
         private static readonly Color SkyColor = new Color32(0x14, 0x1B, 0x3A, 0xFF);
         private static readonly Color GroundColor = new Color32(0x2A, 0x2F, 0x5E, 0xFF);
@@ -19,6 +22,8 @@ namespace DaKiem.Client
 
         private readonly Sprite square;
         private readonly Camera camera;
+        private Vector3 shakeOffset;
+        private float shakeLeft;
 
         public WorldView(IReadOnlyList<MapBox> boxes)
         {
@@ -39,9 +44,21 @@ namespace DaKiem.Client
         {
             float halfView = ViewWidth / 2f;
             float target = Mathf.Clamp(feet.x + facing * LookAhead, halfView, MapWidth - halfView);
-            Vector3 position = camera.transform.position;
+            Vector3 position = camera.transform.position - shakeOffset;
             position.x = Mathf.Lerp(position.x, target, 1f - Mathf.Exp(-CameraSmoothing * Time.deltaTime));
-            camera.transform.position = position;
+
+            shakeLeft = Mathf.Max(0f, shakeLeft - Time.deltaTime);
+            float amount = shakeLeft / ShakeSeconds;
+            float wave = Mathf.Sin(shakeLeft * ShakeTurnsPerSecond * Mathf.PI * 2f);
+            shakeOffset = new Vector3(wave * 0.5f, wave, 0f) * ShakeSize * amount;
+
+            camera.transform.position = position + shakeOffset;
+        }
+
+        /// <summary>A short jolt for the heaviest blows.</summary>
+        public void Shake()
+        {
+            shakeLeft = ShakeSeconds;
         }
 
         private void DrawBox(MapBox box)

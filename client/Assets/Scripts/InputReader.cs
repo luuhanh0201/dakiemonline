@@ -26,6 +26,9 @@ namespace DaKiem.Client
         private bool potionPressed;
         private SkillSlot? skillPressed;
         private bool replayPressed;
+#if UNITY_STANDALONE
+        private GearSlot? gearPressed;
+#endif
 
         public InputReader(HudView hud)
         {
@@ -72,6 +75,16 @@ namespace DaKiem.Client
             dashPressed = false;
             return pressed;
         }
+
+#if UNITY_STANDALONE
+        /// <summary>Returns the slot whose item should change, once per press of F1 to F5.</summary>
+        public GearSlot? ConsumeGearChange()
+        {
+            GearSlot? pressed = gearPressed;
+            gearPressed = null;
+            return pressed;
+        }
+#endif
 
         public bool ConsumeReplay()
         {
@@ -146,6 +159,12 @@ namespace DaKiem.Client
                 MoveX = keys.leftCtrlKey.isPressed ? way * KeyboardWalkTilt : way;
                 MoveY = keys.wKey.isPressed || keys.upArrowKey.isPressed || keys.spaceKey.isPressed ? 1d : 0d;
             }
+
+            if (keys.f1Key.wasPressedThisFrame) gearPressed = GearSlot.Weapon;
+            if (keys.f2Key.wasPressedThisFrame) gearPressed = GearSlot.Hat;
+            if (keys.f3Key.wasPressedThisFrame) gearPressed = GearSlot.Armor;
+            if (keys.f4Key.wasPressedThisFrame) gearPressed = GearSlot.Pants;
+            if (keys.f5Key.wasPressedThisFrame) gearPressed = GearSlot.Cape;
 
             if (hud.EndScreenVisible)
             {

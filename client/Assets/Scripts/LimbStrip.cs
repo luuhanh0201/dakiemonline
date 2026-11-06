@@ -12,6 +12,10 @@ namespace DaKiem.Client
 
         private const int Rows = 16;
         private const float BendRoundness = 0.55f;
+        private const float StiffBendRoundness = 0.1f;
+
+        // How many turns of a ripple fit along a draped strip.
+        private const float RippleTurns = 1.4f;
 
         // The drawn limbs read too thin next to the head at game size.
         private const float WidthScale = 1.35f;
@@ -20,7 +24,8 @@ namespace DaKiem.Client
         private readonly Material material;
         private readonly Vector3[] vertices = new Vector3[(Rows + 1) * 2];
         private readonly Vector2[] points = new Vector2[Rows + 1];
-        private readonly float halfWidth;
+        private float halfWidth;
+        private float bendRoundness = BendRoundness;
         private readonly float shade;
 
         public LimbStrip(Sprite limb, Transform parent, int order, string name, float shade)
@@ -30,8 +35,8 @@ namespace DaKiem.Client
             var host = new GameObject(name);
             host.transform.SetParent(parent, false);
 
-            material = new Material(Shader.Find(ShaderName)) { mainTexture = limb.texture };
-            halfWidth = limb.texture.width / limb.pixelsPerUnit * WidthScale / 2f;
+            material = new Material(Shader.Find(ShaderName));
+            SetImage(limb);
 
             BuildMesh();
             host.AddComponent<MeshFilter>().sharedMesh = mesh;
@@ -41,13 +46,26 @@ namespace DaKiem.Client
             renderer.sortingOrder = order;
         }
 
+        /// <summary>Swaps the drawing, for a sleeve or trouser leg. Its width sets the limb's width.</summary>
+        public void SetImage(Sprite limb)
+        {
+            material.mainTexture = limb.texture;
+            halfWidth = limb.texture.width / limb.pixelsPerUnit * WidthScale / 2f;
+        }
+
+        /// <summary>A stiff drawing folds sharply at the joint instead of curving like cloth.</summary>
+        public void SetStiff(bool stiff)
+        {
+            bendRoundness = stiff ? StiffBendRoundness : BendRoundness;
+        }
+
         /// <summary>Lays the limb from start through the bend to end, in the parent's local space.</summary>
         public void Bend(Vector2 start, Vector2 bend, Vector2 end)
         {
             float upperLength = Vector2.Distance(start, bend);
             float lowerLength = Vector2.Distance(bend, end);
             float total = upperLength + lowerLength;
-            float round = Mathf.Min(upperLength, lowerLength) * BendRoundness;
+            float round = Mathf.Min(upperLength, lowerLength) * bendRoundness;
             Vector2 upperWay = (bend - start).normalized;
             Vector2 lowerWay = (end - bend).normalized;
 
@@ -57,6 +75,35 @@ namespace DaKiem.Client
                 points[row] = PointAt(along, start, bend, upperWay, lowerWay, upperLength, round);
             }
 
+            LayAlongPoints();
+        }
+
+        /// <summary>
+        /// Hangs a strip of cloth from start. The angle runs from upper at the top to lower at the
+        /// tail, and a ripple grows toward the tail, so the free end moves most. Angles are in
+        /// degrees from straight down, positive toward the front.
+        /// </summary>
+        public void Drape(Vector2 start, float length, float upper, float lower, float ripple, float ripplePhase)
+        {
+            float step = length / Rows;
+            Vector2 point = start;
+            points[0] = start;
+
+            for (int row = 1; row <= Rows; row++)
+            {
+                float along = (row - 0.5f) / Rows;
+                float wave = Mathf.Sin(ripplePhase - along * RippleTurns * Mathf.PI * 2f);
+                float angle = (Mathf.Lerp(upper, lower, along * along) + ripple * along * wave) * Mathf.Deg2Rad;
+
+                point += new Vector2(Mathf.Sin(angle), -Mathf.Cos(angle)) * step;
+                points[row] = point;
+            }
+
+            LayAlongPoints();
+        }
+
+        private void LayAlongPoints()
+        {
             for (int row = 0; row <= Rows; row++)
             {
                 Vector2 way = (points[Mathf.Min(row + 1, Rows)] - points[Mathf.Max(row - 1, 0)]).normalized;

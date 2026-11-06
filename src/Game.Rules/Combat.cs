@@ -61,12 +61,13 @@ namespace Game.Rules
 
     public readonly struct CombatEvent
     {
-        public CombatEvent(CombatEventKind kind, SkillSlot? slot = null, int amount = 0, SkillSlow? slow = null)
+        public CombatEvent(CombatEventKind kind, SkillSlot? slot = null, int amount = 0, SkillSlow? slow = null, int hitIndex = 0)
         {
             Kind = kind;
             Slot = slot;
             Amount = amount;
             Slow = slow;
+            HitIndex = hitIndex;
         }
 
         public CombatEventKind Kind { get; }
@@ -77,6 +78,9 @@ namespace Game.Rules
 
         /// <summary>Slow the hit applies to the target, if any.</summary>
         public SkillSlow? Slow { get; }
+
+        /// <summary>Which hit of the skill landed, counting from 0.</summary>
+        public int HitIndex { get; }
     }
 
     public enum CastPhase
@@ -125,6 +129,9 @@ namespace Game.Rules
         public IReadOnlyList<Projectile> Projectiles => projectiles;
         public bool IsAttacking => Casting != null;
 
+        /// <summary>Place of the current hit in its combo, counting from 0.</summary>
+        public int ComboStep { get; internal set; }
+
         public CastPhase Phase
         {
             get
@@ -143,6 +150,28 @@ namespace Game.Rules
             }
         }
 
+        /// <summary>How many separate hits the current skill's active part has.</summary>
+        public int ActiveHitCount => PhaseEndTicks.Length;
+
+        /// <summary>Which hit of the active part is playing, counting from 0.</summary>
+        public int ActiveHitIndex => Math.Max(0, Array.FindIndex(PhaseEndTicks, end => CastTicks < end));
+
+        /// <summary>How far through the current hit the cast is, from 0 to 1.</summary>
+        public double ActiveHitProgress
+        {
+            get
+            {
+                if (Phase != CastPhase.Active)
+                {
+                    return 0d;
+                }
+
+                int index = ActiveHitIndex;
+                int start = index == 0 ? WindupTicks : PhaseEndTicks[index - 1];
+                return (CastTicks - start) / (double)(PhaseEndTicks[index] - start);
+            }
+        }
+
         internal List<Projectile> ProjectileList => projectiles;
         internal Dictionary<SkillSlot, int> CooldownTicks { get; } = new Dictionary<SkillSlot, int>();
         internal int CastTicks { get; set; }
@@ -157,6 +186,7 @@ namespace Game.Rules
         internal int SkillBufferTicks { get; set; }
         internal int PotionBufferTicks { get; set; }
         internal int PotionCooldownTicks { get; set; }
+        internal int ComboWindowTicks { get; set; }
 
         public double CooldownSecondsLeft(SkillSlot slot)
         {
@@ -186,11 +216,12 @@ namespace Game.Rules
         {
             CoolDown(combat);
             BufferInput(combat, intent, config.Movement);
-            TryStartBufferedSkill(combat, movement, resources, config, target, events);
+            TryStartBufferedSkill(combat, movement, resources, moveIntent.MoveX, config, target, events);
             TryUsePotion(combat, resources, config, events);
 
             MovementLimits limits = LimitsFor(combat);
             Movement.Step(movement, moveIntent, config.Movement, map, limits);
+            FollowTurn(combat, movement);
 
             if (movement.IsDashing && combat.Phase == CastPhase.Recovery)
             {
@@ -238,6 +269,7 @@ namespace Game.Rules
             }
 
             combat.PotionCooldownTicks = Math.Max(0, combat.PotionCooldownTicks - 1);
+            combat.ComboWindowTicks = Math.Max(0, combat.ComboWindowTicks - 1);
         }
 
         private static void BufferInput(CombatState combat, in CombatIntent intent, MovementConfig config)
@@ -261,6 +293,7 @@ namespace Game.Rules
             CombatState combat,
             MovementState movement,
             ResourceState resources,
+            double moveX,
             GameConfig config,
             CombatTarget? target,
             List<CombatEvent> events)
@@ -285,11 +318,11 @@ namespace Game.Rules
 
             combat.CooldownTicks[slot] = Ticks.FromSeconds(skill.CooldownSec);
             combat.SkillBufferTicks = 0;
-            BeginCast(combat, movement, skill, target);
+            BeginCast(combat, movement, skill, moveX, target);
             events.Add(new CombatEvent(CombatEventKind.SkillStarted, slot));
         }
 
-        private static void BeginCast(CombatState combat, MovementState movement, SkillConfig skill, CombatTarget? target)
+        private static void BeginCast(CombatState combat, MovementState movement, SkillConfig skill, double moveX, CombatTarget? target)
         {
             // Phase ends round from the running total so a skill's full length stays exact at 30 ticks.
             double seconds = skill.WindupSec;
@@ -309,15 +342,36 @@ namespace Game.Rules
             combat.Casting = skill;
             combat.CastTicks = 0;
             combat.LastHitPhase = NoPhase;
+            combat.ComboStep = NextComboStep(combat, skill);
+            combat.ComboWindowTicks = 0;
             combat.OriginX = movement.X;
-            combat.Direction = AimDirection(movement, skill, target);
+            combat.Direction = AimDirection(movement, skill, moveX, target);
             movement.Facing = combat.Direction;
         }
 
-        /// <summary>Turns toward a target in reach; otherwise keeps the direction the character faces.</summary>
-        private static int AimDirection(MovementState movement, SkillConfig skill, CombatTarget? target)
+        /// <summary>Continues the chain while its window is open; any other skill or a pause restarts it.</summary>
+        private static int NextComboStep(CombatState combat, SkillConfig skill)
+        {
+            if (skill.Combo == null || combat.ComboWindowTicks == 0)
+            {
+                return 0;
+            }
+
+            return (combat.ComboStep + 1) % skill.Combo.HitDamagePercents.Count;
+        }
+
+        /// <summary>
+        /// A held direction always wins. With the joystick released the skill turns toward a
+        /// target in reach, and otherwise keeps the direction the character faces.
+        /// </summary>
+        private static int AimDirection(MovementState movement, SkillConfig skill, double moveX, CombatTarget? target)
         {
             double reach = skill.Projectile?.Range ?? skill.Hitbox?.Width ?? 0d;
+
+            if (moveX != 0d)
+            {
+                return Math.Sign(moveX);
+            }
 
             if (target == null || reach == 0d)
             {
@@ -381,7 +435,19 @@ namespace Game.Rules
                 forcedDeltaX = combat.Direction * skill.DashDistance / (combat.ActiveEndTicks - combat.WindupTicks);
             }
 
-            return new MovementLimits(speedFactor, speedFactor > 0d, phase == CastPhase.Recovery, true, forcedDeltaX);
+            // A skill cast on the move can still turn, except during the blow itself.
+            bool lockFacing = speedFactor == 0d || phase == CastPhase.Active;
+
+            return new MovementLimits(speedFactor, speedFactor > 0d, phase == CastPhase.Recovery, lockFacing, forcedDeltaX);
+        }
+
+        /// <summary>Turning before the blow lands takes the blow around with the body.</summary>
+        private static void FollowTurn(CombatState combat, MovementState movement)
+        {
+            if (combat.Phase == CastPhase.Windup && combat.Casting!.MoveSpeedPercent > 0d)
+            {
+                combat.Direction = movement.Facing;
+            }
         }
 
         private static void AdvanceCast(
@@ -464,8 +530,8 @@ namespace Game.Rules
             }
 
             combat.LastHitPhase = phase;
-            int damage = SkillDamage.HitDamage(skill, phase, config.Character.Attack, SkillLevel, target.Value.Defense);
-            events.Add(new CombatEvent(CombatEventKind.SkillHit, skill.Slot, damage, skill.Slow));
+            int damage = SkillDamage.HitDamage(skill, phase, config.Character.Attack, SkillLevel, target.Value.Defense, combat.ComboStep);
+            events.Add(new CombatEvent(CombatEventKind.SkillHit, skill.Slot, damage, skill.Slow, phase));
         }
 
         /// <summary>
@@ -491,6 +557,8 @@ namespace Game.Rules
         private static void EndCast(CombatState combat, List<CombatEvent> events)
         {
             events.Add(new CombatEvent(CombatEventKind.SkillEnded, combat.Casting?.Slot));
+            SkillCombo? combo = combat.Casting?.Combo;
+            combat.ComboWindowTicks = combo == null ? 0 : Ticks.FromSeconds(combo.WindowSec);
             combat.Casting = null;
         }
 

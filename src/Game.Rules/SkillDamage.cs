@@ -23,13 +23,16 @@ namespace Game.Rules
         /// <summary>
         /// Damage of one hit against a target. Multi-hit skills split S by phase;
         /// skills without phases, such as projectiles, deal all of S in one hit.
+        /// A combo then scales the hit by its place in the chain.
         /// </summary>
-        public static int HitDamage(SkillConfig skill, int phaseIndex, decimal attack, int level, decimal defense)
+        public static int HitDamage(SkillConfig skill, int phaseIndex, decimal attack, int level, decimal defense, int comboStep = 0)
         {
             decimal total = BeforeDefense(skill.BaseDamage, attack, skill.AttackCoefficient, skill.LevelPercent, level);
             decimal percent = skill.ActivePhases.Count == 0 ? 100m : skill.ActivePhases[phaseIndex].DamagePercent;
 
-            return AfterDefense(total * percent / 100m, defense);
+            decimal comboPercent = skill.Combo == null ? 100m : skill.Combo.HitDamagePercents[comboStep];
+
+            return AfterDefense(total * percent / 100m * comboPercent / 100m, defense);
         }
 
         /// <summary>Damage taken = S × 100 / (100 + defense), rounded down.</summary>

@@ -137,6 +137,34 @@ namespace Game.Rules.Tests
         }
 
         [Fact]
+        public void BasicAttackIsAThreeHitCombo()
+        {
+            SkillCombo combo = Skill("thuy.danh_thuong").Combo!;
+
+            Assert.Equal(new[] { 100m, 100m, 130m }, combo.HitDamagePercents);
+            Assert.Equal(ConfigStatus.DeXuat, combo.Status);
+        }
+
+        [Fact]
+        public void ComboNeedsAtLeastTwoHits()
+        {
+            InvalidConfigException error = Rejected(
+                Skills,
+                "{ \"damagePercent\": 100 },\n          { \"damagePercent\": 100 },\n          { \"damagePercent\": 130 }",
+                "{ \"damagePercent\": 100 }");
+
+            Assert.Contains("hits", error.Message);
+        }
+
+        [Fact]
+        public void ComboWindowMustBePositive()
+        {
+            InvalidConfigException error = Rejected(Skills, "\"windowSec\": 0.5", "\"windowSec\": 0");
+
+            Assert.Contains("windowSec", error.Message);
+        }
+
+        [Fact]
         public void BasicAttackTakesSixTenthsOfASecond()
         {
             SkillConfig skill = Skill("thuy.danh_thuong");

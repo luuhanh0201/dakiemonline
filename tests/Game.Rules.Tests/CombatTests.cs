@@ -258,6 +258,76 @@ namespace Game.Rules.Tests
         }
 
         [Fact]
+        public void Combo_ThirdHitDealsMoreThenTheChainStartsAgain()
+        {
+            Fighter fighter = NewFighter();
+            CombatTarget boss = BossAt(StartX + 1d);
+
+            for (int press = 0; press < 4; press++)
+            {
+                CastToEnd(fighter, SkillSlot.Attack, boss);
+            }
+
+            Assert.Equal(new[] { 60, 60, 78, 60 }, Hits.Select(hit => hit.Amount));
+        }
+
+        [Fact]
+        public void Combo_ReportsItsPlaceWhileCasting()
+        {
+            Fighter fighter = NewFighter();
+
+            Cast(fighter, SkillSlot.Attack);
+            Assert.Equal(0, fighter.Combat.ComboStep);
+            Wait(fighter, Ticks(TotalSeconds(SkillSlot.Attack)));
+
+            Cast(fighter, SkillSlot.Attack);
+            Assert.Equal(1, fighter.Combat.ComboStep);
+        }
+
+        [Fact]
+        public void Combo_PauseLongerThanTheWindowRestartsTheChain()
+        {
+            Fighter fighter = NewFighter();
+            CombatTarget boss = BossAt(StartX + 1d);
+
+            CastToEnd(fighter, SkillSlot.Attack, boss);
+            CastToEnd(fighter, SkillSlot.Attack, boss);
+            Wait(fighter, Ticks(config.Skill(SkillSlot.Attack).Combo!.WindowSec) + 1);
+            CastToEnd(fighter, SkillSlot.Attack, boss);
+
+            Assert.Equal(new[] { 60, 60, 60 }, Hits.Select(hit => hit.Amount));
+        }
+
+        [Fact]
+        public void Combo_PressInsideTheWindowContinuesTheChain()
+        {
+            Fighter fighter = NewFighter();
+            CombatTarget boss = BossAt(StartX + 1d);
+
+            CastToEnd(fighter, SkillSlot.Attack, boss);
+            CastToEnd(fighter, SkillSlot.Attack, boss);
+            Wait(fighter, Ticks(config.Skill(SkillSlot.Attack).Combo!.WindowSec) / 2);
+            CastToEnd(fighter, SkillSlot.Attack, boss);
+
+            Assert.Equal(new[] { 60, 60, 78 }, Hits.Select(hit => hit.Amount));
+        }
+
+        [Fact]
+        public void Combo_AnotherSkillRestartsTheChain()
+        {
+            Fighter fighter = NewFighter();
+            CombatTarget boss = BossAt(StartX + 1d);
+
+            CastToEnd(fighter, SkillSlot.Attack, boss);
+            CastToEnd(fighter, SkillSlot.Attack, boss);
+            CastToEnd(fighter, SkillSlot.Ranged);
+            events.Clear();
+            CastToEnd(fighter, SkillSlot.Attack, boss);
+
+            Assert.Equal(60, Hits.Single(hit => hit.Slot == SkillSlot.Attack).Amount);
+        }
+
+        [Fact]
         public void BasicAttack_MissesBeyondItsReach()
         {
             Fighter fighter = NewFighter();
@@ -296,6 +366,41 @@ namespace Game.Rules.Tests
             CastToEnd(fighter, SkillSlot.Ultimate, BossAt(StartX + 1d));
 
             Assert.Equal(new[] { 150, 150, 300 }, Hits.Select(hit => hit.Amount));
+        }
+
+        [Fact]
+        public void Ultimate_ReportsWhichHitIsPlaying()
+        {
+            Fighter fighter = NewFighter();
+
+            Cast(fighter, SkillSlot.Ultimate);
+            Wait(fighter, Ticks(0.2d));
+            Assert.Equal(3, fighter.Combat.ActiveHitCount);
+            Assert.Equal(0, fighter.Combat.ActiveHitIndex);
+
+            Wait(fighter, Ticks(0.3d));
+            Assert.Equal(1, fighter.Combat.ActiveHitIndex);
+            Assert.InRange(fighter.Combat.ActiveHitProgress, 0.1d, 0.2d);
+
+            Wait(fighter, Ticks(0.3d) + Ticks(0.2d));
+            Assert.Equal(2, fighter.Combat.ActiveHitIndex);
+            Assert.InRange(fighter.Combat.ActiveHitProgress, 0.5d, 0.6d);
+        }
+
+        [Theory]
+        [InlineData(0.5d, 0)]
+        [InlineData(0.8d, 1)]
+        [InlineData(1.2d, 2)]
+        public void Ultimate_HitNamesItsOwnPhaseEvenOnThatPhasesLastTick(double phaseEndSeconds, int expectedHit)
+        {
+            Fighter fighter = NewFighter();
+            CombatTarget boss = BossAt(StartX + 1d);
+
+            Cast(fighter, SkillSlot.Ultimate);
+            Wait(fighter, Ticks(phaseEndSeconds) - 2);
+            Wait(fighter, 1, target: boss);
+
+            Assert.Equal(expectedHit, Hits.Single().HitIndex);
         }
 
         [Fact]
@@ -588,11 +693,71 @@ namespace Game.Rules.Tests
         }
 
         [Fact]
-        public void Aim_JoystickDoesNotTurnTheSkillAround()
+        public void Aim_HeldDirectionBeatsATargetInReach()
+        {
+            Fighter fighter = NewFighter();
+            CombatTarget boss = BossAt(StartX + 1d);
+
+            Tick(fighter, SkillSlot.Attack, moveX: -RunTilt, target: boss);
+
+            Assert.Equal(-1, fighter.Movement.Facing);
+        }
+
+        [Fact]
+        public void Aim_TurningDuringWindupTakesTheBlowAround()
+        {
+            Fighter fighter = NewFighter();
+            CombatTarget behind = BossAt(StartX - 3d);
+
+            Cast(fighter, SkillSlot.Attack);
+            Wait(fighter, Ticks(0.15d) - 1, -RunTilt);
+            Wait(fighter, 1, -RunTilt, behind);
+
+            Assert.Equal(-1, fighter.Movement.Facing);
+            Assert.Equal(60, Hits.Single().Amount);
+        }
+
+        [Fact]
+        public void Aim_TheBlowItselfCannotTurn()
         {
             Fighter fighter = NewFighter();
 
             Cast(fighter, SkillSlot.Attack);
+            Wait(fighter, Ticks(0.15d) + 1);
+            Assert.Equal(CastPhase.Active, fighter.Combat.Phase);
+
+            Wait(fighter, 1, -RunTilt);
+
+            Assert.Equal(1, fighter.Movement.Facing);
+        }
+
+        [Fact]
+        public void Aim_RecoveryTurnsAndTheNextHitFollows()
+        {
+            Fighter fighter = NewFighter();
+            CombatTarget behind = BossAt(StartX - 3d);
+
+            Cast(fighter, SkillSlot.Attack);
+            Wait(fighter, Ticks(0.25d) + 1);
+            Assert.Equal(CastPhase.Recovery, fighter.Combat.Phase);
+
+            Wait(fighter, 1, -RunTilt);
+            Assert.Equal(-1, fighter.Movement.Facing);
+
+            Wait(fighter, Ticks(0.35d), -RunTilt);
+            Tick(fighter, SkillSlot.Attack, moveX: -RunTilt, target: behind);
+            Wait(fighter, Ticks(0.15d) + 1, -RunTilt, behind);
+
+            Assert.Equal(1, fighter.Combat.ComboStep);
+            Assert.Equal(60, Hits.Single().Amount);
+        }
+
+        [Fact]
+        public void Aim_RootedSkillCannotTurnOnceStarted()
+        {
+            Fighter fighter = NewFighter();
+
+            Cast(fighter, SkillSlot.OptionA);
             Wait(fighter, 3, -RunTilt);
 
             Assert.Equal(1, fighter.Movement.Facing);

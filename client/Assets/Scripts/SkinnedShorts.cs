@@ -58,6 +58,9 @@ namespace DaKiem.Client
             mesh.RecalculateBounds();
         }
 
+        /// <summary>Swaps the drawing for one of the same size.</summary>
+        public void SetImage(Texture texture) => material.mainTexture = texture;
+
         public void Tint(Color color, float alpha) => material.color = new Color(color.r, color.g, color.b, alpha);
 
         private static Vector2 Rotate(Vector2 point, Vector2 pivot, float angle)

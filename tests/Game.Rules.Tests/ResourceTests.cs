@@ -251,6 +251,18 @@ namespace Game.Rules.Tests
         }
 
         [Fact]
+        public void Design_FullComboIsAboutOneHundredTenDamagePerSecond()
+        {
+            SkillConfig skill = Skill("thuy.danh_thuong");
+            double cycle = skill.WindupSec + skill.ActivePhases.Sum(phase => phase.DurationSec) + skill.RecoverySec;
+            int hits = skill.Combo!.HitDamagePercents.Count;
+
+            double damage = Enumerable.Range(0, hits).Sum(step => SkillDamage.HitDamage(skill, 0, Character.Attack, 1, 0m, step));
+
+            Assert.Equal(110d, damage / (cycle * hits), Precision);
+        }
+
+        [Fact]
         public void Design_FourDamagingSkillsAreAboutNinetyThreeDamagePerSecond()
         {
             string[] ids = { "thuy.kiem_khi", "thuy.chem_tien", "thuy.song_kiem", "thuy.tuyet_ky" };

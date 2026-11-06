@@ -12,6 +12,35 @@ namespace DaKiem.Client
         Rise,
         Fall,
         Dash,
+        Windup,
+        Strike,
+        Windup2,
+        Strike2,
+        Windup3,
+        Strike3,
+        Hurt,
+    }
+
+    /// <summary>Where a cast is, for choosing what the arms do.</summary>
+    public readonly struct SwingMoment
+    {
+        public SwingMoment(int comboStep, int hitIndex, int hitCount, float hitProgress)
+        {
+            ComboStep = comboStep;
+            HitIndex = hitIndex;
+            HitCount = hitCount;
+            HitProgress = hitProgress;
+        }
+
+        public int ComboStep { get; }
+        public int HitIndex { get; }
+        public int HitCount { get; }
+        public float HitProgress { get; }
+
+        public static SwingMoment Of(CombatState combat)
+        {
+            return new SwingMoment(combat.ComboStep, combat.ActiveHitIndex, combat.ActiveHitCount, (float)combat.ActiveHitProgress);
+        }
     }
 
     /// <summary>
@@ -40,7 +69,17 @@ namespace DaKiem.Client
         private const int HairTurn = 13;
         private const int TailBaseTurn = 14;
         private const int TailTipTurn = 15;
-        private const int ChannelCount = 16;
+        private const int CapeUpper = 16;
+        private const int CapeLower = 17;
+        private const int WeaponTurn = 18;
+        private const int CapeRipple = 19;
+        private const int AttackHipDrop = 20;
+        private const int AttackNearAnkle = 21;
+        private const int AttackFarAnkle = 22;
+        private const int AttackStep = 23;
+        private const int BodyYaw = 24;
+        private const int WeaponRoll = 25;
+        private const int ChannelCount = 26;
 
         // How fast each channel closes on its target, per second.
         private const float LegEase = 45f;
@@ -51,6 +90,30 @@ namespace DaKiem.Client
         private const float HairEase = 8f;
         private const float TailBaseEase = 9f;
         private const float TailTipEase = 6f;
+        private const float CapeUpperEase = 8f;
+        private const float CapeLowerEase = 5f;
+        private const float WeaponEase = 24f;
+        private const float CapeRippleEase = 4f;
+        private const float AttackBodyEase = 32f;
+
+        // Arms and body snap into an attack or a hit far faster than they settle afterwards.
+        private const float ActionEaseBoost = 3f;
+
+        // After a blow lands the swing carries on for a moment, then the pose holds briefly.
+        private const float ImpactDelay = 0.05f;
+        private const float ImpactHold = 0.05f;
+        private const float FinisherHold = 0.1f;
+
+        // Row of the heaviest blow in AttackStances.
+        private const int FinisherStance = 2;
+
+        // Each hit of a multi-hit skill strikes first, then spends the rest of its time drawing
+        // back for the next one. The blow itself and its hold take about 0.1 seconds, so a longer
+        // share would leave the blade standing still between hits.
+        private const float StrikeShareOfHit = 0.4f;
+
+        private const float TrailOpacity = 0.75f;
+        private const float FinisherTrailOpacity = 1f;
 
         // A foot travels StepReach either side of the hip while on the ground. The cycle advances
         // from these so the planted foot moves back exactly as fast as the body moves forward.
@@ -80,6 +143,28 @@ namespace DaKiem.Client
         private const string FrontSprite = "front_idle";
         private const int FrontOrder = 20;
         private const float FrontHeightUnits = 1f;
+
+        // Relaxed guard: hand in front of the lower chest, blade angled away from the face.
+        // Weapon angles are from straight up, positive toward the back.
+        private const float CarryShoulder = 50f;
+        private const float CarryElbow = 40f;
+        private const float CarrySwing = 3f;
+        private const float CarryWeapon = -30f;
+        private const float DashWeapon = 100f;
+
+        private const float CapeRestUpper = -6f;
+        private const float CapeRestLower = -2f;
+        private const float CapeRunUpper = -40f;
+        private const float CapeRunLower = -68f;
+        private const float CapeDashUpper = -72f;
+        private const float CapeDashLower = -96f;
+        private const float CapeFallUpper = -70f;
+        private const float CapeFallLower = -140f;
+        private const float CapeRestRipple = 2.5f;
+        private const float CapeRunRipple = 16f;
+        private const float CapeAirRipple = 12f;
+        private const float CapeRipplesPerSecondAtRest = 0.5f;
+        private const float CapeRipplesPerSecondAtRun = 2.4f;
         private const float FrontShowsBelowRun = 0.15f;
 
         private const float FrontBreathsPerSecond = 0.42f;
@@ -121,17 +206,64 @@ namespace DaKiem.Client
         private static readonly float[] DashPose =
             Pose(0.075f, 0.2f, -0.2f, 6f, -0.23f, -0.19f, -46f, -66f, 24f, -82f, 18f, -30f, 16f, -14f, -58f, -22f);
 
+        // One row per combo hit and cast phase: windup, active, recovery. Columns are near shoulder,
+        // near elbow, far shoulder, far elbow, torso, head, weapon angle, hip drop, near and far
+        // ankle reach, and how far the whole body steps. Each blow winds up the opposite way first.
+        private static readonly float[][][] AttackStances =
+        {
+            // A chop down from overhead.
+            new[]
+            {
+                new[] { 195f, 35f, -20f, 35f, 14f, -3f, 35f, 0.05f, 0.02f, -0.06f, -0.03f },
+                new[] { 65f, 5f, -60f, 20f, -24f, 8f, -110f, 0.09f, 0.15f, -0.17f, 0.07f },
+                new[] { 45f, 15f, -35f, 20f, -14f, 5f, -80f, 0.07f, 0.13f, -0.15f, 0.06f },
+            },
+            // A rising cut, from a crouch up onto the toes.
+            new[]
+            {
+                new[] { 35f, 20f, -30f, 30f, -20f, 8f, -150f, 0.1f, 0.12f, -0.12f, 0f },
+                new[] { 110f, 5f, -60f, 25f, 10f, -6f, -35f, 0.01f, 0.1f, -0.1f, 0.06f },
+                new[] { 95f, 15f, -40f, 20f, 6f, -3f, -30f, 0.03f, 0.08f, -0.08f, 0.04f },
+            },
+            // The finisher: a full coil, a long step, and it stays down after the blow.
+            new[]
+            {
+                new[] { 205f, 45f, -5f, 45f, 22f, -6f, 60f, 0.08f, 0.03f, -0.1f, -0.07f },
+                new[] { 55f, 0f, -90f, 10f, -34f, 10f, -125f, 0.13f, 0.22f, -0.22f, 0.15f },
+                new[] { 40f, 10f, -70f, 15f, -26f, 8f, -100f, 0.12f, 0.21f, -0.21f, 0.14f },
+            },
+        };
+
         private static readonly float[] Ease = BuildEase();
 
         private readonly Transform root;
         private readonly Transform rig;
         private readonly FrontFigure front;
+        private readonly FrontFigure frontGear;
+        private readonly EquipmentView equipment;
+        private readonly WeaponTrail trail = new WeaponTrail();
         private readonly Transform shadow;
         private readonly SpriteRenderer shadowRenderer;
         private readonly Material partMaterial;
         private SkinnedShorts shorts;
+        private SpriteRenderer torsoRenderer;
         private float nearThigh;
         private float farThigh;
+        private float actionBoost = 1f;
+        private float capeRipplePhase;
+        private int stanceRow;
+        private CastPhase stanceStage;
+        private float impactDelay;
+        private float impactHold;
+        private float pendingHold;
+        private CastPhase previousActionStage;
+        private int previousActionRow;
+        private float actionAge;
+        private float returnAge = 1f;
+        private float armClearance;
+        private float armReach;
+        private float wristClearance;
+        private float poseDeltaTime = 1f / 60f;
         private float frontAmount;
         private float frontAlpha;
         private float sideAlpha = 1f;
@@ -163,7 +295,13 @@ namespace DaKiem.Client
             rig = new GameObject("Rig").transform;
             rig.SetParent(root, false);
 
-            front = new FrontFigure(Resources.Load<Sprite>(SpriteFolder + FrontSprite), root, FrontOrder, FrontHeightUnits);
+            Sprite frontImage = Resources.Load<Sprite>(SpriteFolder + FrontSprite);
+            float frontWidth = FrontHeightUnits * frontImage.texture.width / frontImage.texture.height;
+            front = new FrontFigure("FrontFigure", root, frontWidth, FrontHeightUnits, Vector2.one);
+            front.AddLayer("body", frontImage.texture, FrontOrder);
+            frontGear = new FrontFigure("FrontGear", root, frontWidth, FrontHeightUnits, new Vector2(
+                EquipmentView.FrontCanvasWidth / (float)frontImage.texture.width,
+                EquipmentView.FrontCanvasHeight / (float)frontImage.texture.height));
 
             shadow = new GameObject("Shadow").transform;
             shadowRenderer = shadow.gameObject.AddComponent<SpriteRenderer>();
@@ -180,13 +318,76 @@ namespace DaKiem.Client
                 CreateLimb(limb);
             }
 
+            equipment = new EquipmentView(
+                joints[CharacterRig.Head],
+                joints[CharacterRig.Torso],
+                joints[CharacterRig.HandNear],
+                torsoRenderer,
+                limbs[CharacterRig.ArmNear],
+                limbs[CharacterRig.ArmFar],
+                limbs[CharacterRig.LegNear],
+                limbs[CharacterRig.LegFar],
+                shorts,
+                frontGear);
+
             LimbShape leg = shapes[CharacterRig.LegNear];
             standingLegLength = leg.Upper + leg.Lower;
             BuildGroundPose();
+            BuildCape(true, 0f, false);
+            stanceStage = CastPhase.None;
+            BuildAction(false, false, true);
             target.CopyTo(current, 0);
         }
 
-        public void Show(Vector2 feet, int facing, bool grounded, float verticalSpeed, bool dashing, CastPhase phase, bool hurt, float frameSeconds = -1f)
+        /// <summary>Holds the pose for a moment once a blow has landed, longer for a finisher.</summary>
+        public void ShowImpact(bool finisher)
+        {
+            impactDelay = ImpactDelay;
+            pendingHold = finisher ? FinisherHold : ImpactHold;
+        }
+
+        /// <summary>Holds the pose for a blow of a chain; true when it was the chain's heaviest.</summary>
+        public bool ReactToHit(in CombatEvent hit, SkillConfig skill, int comboStep)
+        {
+            int hitCount = skill.ActivePhases.Count;
+
+            if (skill.Combo == null && hitCount <= 1)
+            {
+                return false;
+            }
+
+            bool finisher = hitCount > 1
+                ? hit.HitIndex == hitCount - 1
+                : comboStep == skill.Combo.HitDamagePercents.Count - 1;
+
+            ShowImpact(finisher);
+            return finisher;
+        }
+
+        private bool ImpactHolding(float deltaTime)
+        {
+            if (impactDelay > 0f)
+            {
+                impactDelay -= deltaTime;
+                if (impactDelay <= 0f) impactHold = pendingHold;
+                return false;
+            }
+
+            impactHold -= deltaTime;
+            return impactHold > 0f;
+        }
+
+        public void WearNext(GearSlot slot)
+        {
+            equipment.WearNext(slot);
+        }
+
+        public void Wear(GearSlot slot, int index)
+        {
+            equipment.Wear(slot, index);
+        }
+
+        public void Show(Vector2 feet, int facing, bool grounded, float verticalSpeed, bool dashing, CastPhase phase, bool hurt, float frameSeconds = -1f, SwingMoment swing = default)
         {
             float deltaTime = Mathf.Max(frameSeconds < 0f ? Time.deltaTime : frameSeconds, 0.0001f);
             float moved = hasPosition ? Mathf.Abs(feet.x - lastX) : 0f;
@@ -213,7 +414,20 @@ namespace DaKiem.Client
             root.position = new Vector3(feet.x, feet.y, 0f);
 
             BuildTarget(grounded, verticalSpeed, dashing);
-            EaseToTarget(deltaTime);
+            ChooseStance(phase, swing);
+            if (stanceStage != previousActionStage || stanceRow != previousActionRow)
+            {
+                actionAge = 0f;
+                if (stanceStage == CastPhase.None && previousActionStage != CastPhase.None) returnAge = 0f;
+                previousActionStage = stanceStage;
+                previousActionRow = stanceRow;
+            }
+            actionAge += deltaTime;
+            returnAge += deltaTime;
+            BuildAction(hurt, dashing, grounded);
+            BuildCape(grounded, verticalSpeed, dashing);
+            capeRipplePhase += Mathf.Lerp(CapeRipplesPerSecondAtRest, CapeRipplesPerSecondAtRun, runAmount) * Mathf.PI * 2f * deltaTime;
+            EaseToTarget(ImpactHolding(deltaTime) ? 0f : deltaTime);
             if (grounded && !dashing)
             {
                 // Hip lag must never pull a planted foot outside the IK reach.
@@ -231,7 +445,15 @@ namespace DaKiem.Client
                 current[FarFoot] = target[FarFoot];
             }
             Apply();
-            bool standing = grounded && !dashing && !running && phase == CastPhase.None && runAmount < FrontShowsBelowRun;
+            trail.Show(
+                stanceStage == CastPhase.Active,
+                equipment.GripPoint,
+                equipment.BladeInnerPoint,
+                equipment.BladeOuterPoint,
+                (stanceRow == 1 ? 1 : -1) * facing,
+                stanceRow == FinisherStance ? FinisherTrailOpacity : TrailOpacity,
+                deltaTime);
+            bool standing = !equipment.HasWeapon && grounded && !dashing && !running && phase == CastPhase.None && !hurt && returnAge >= 0.2f && runAmount < FrontShowsBelowRun;
 
             frontAmount = Mathf.MoveTowards(frontAmount, standing ? 1f : 0f, TurnSpeed * deltaTime);
 
@@ -263,6 +485,7 @@ namespace DaKiem.Client
             root.localScale = new Vector3(shownFacing, 1f, 1f);
             rig.gameObject.SetActive(sideAlpha > 0f);
             front.SetVisible(frontAlpha > 0f);
+            frontGear.SetVisible(frontAlpha > 0f);
 
             if (frontAlpha > 0f)
             {
@@ -270,6 +493,7 @@ namespace DaKiem.Client
                 float dip = Mathf.Sin(frontAmount * Mathf.PI) * TurnDip;
 
                 front.Pose(breath, 1f - frontAmount, shownFacing, dip);
+                frontGear.Pose(breath, 1f - frontAmount, shownFacing, dip);
             }
         }
 
@@ -328,12 +552,28 @@ namespace DaKiem.Client
                     break;
             }
 
+            bool inAir = pose == CharacterPose.Rise || pose == CharacterPose.Fall;
+            bool isWindup = pose == CharacterPose.Windup || pose == CharacterPose.Windup2 || pose == CharacterPose.Windup3;
+            bool isStrike = pose == CharacterPose.Strike || pose == CharacterPose.Strike2 || pose == CharacterPose.Strike3;
+            stanceStage = isWindup ? CastPhase.Windup : isStrike ? CastPhase.Active : CastPhase.None;
+            stanceRow = pose == CharacterPose.Windup3 || pose == CharacterPose.Strike3 ? FinisherStance
+                : pose == CharacterPose.Windup2 || pose == CharacterPose.Strike2 ? 1
+                : 0;
+            BuildAction(pose == CharacterPose.Hurt, pose == CharacterPose.Dash, !inAir);
+            BuildCape(!inAir, pose == CharacterPose.Fall ? -RiseSpeed : RiseSpeed, pose == CharacterPose.Dash);
             target.CopyTo(current, 0);
             Apply();
-            frontAmount = pose == CharacterPose.Idle ? 1f : 0f;
+            actionBoost = 1f;
+            frontAmount = pose == CharacterPose.Idle && !equipment.HasWeapon ? 1f : 0f;
             ShowTurn();
             ShowShadow(0f, pose == CharacterPose.Rise || pose == CharacterPose.Fall ? 1f : 0f);
             Tint(Color.white);
+        }
+
+        /// <summary>Sets the facing used by Preview, for the review tools.</summary>
+        public void PreviewFacing(int facing)
+        {
+            shownFacing = facing;
         }
 
         /// <summary>Holds a moment of the turn, for the pose sheet tool. 1 is facing front.</summary>
@@ -356,7 +596,7 @@ namespace DaKiem.Client
             {
                 float fall = Mathf.InverseLerp(RiseSpeed, -RiseSpeed, verticalSpeed);
 
-                for (int channel = 0; channel < ChannelCount; channel++)
+                for (int channel = 0; channel < RisePose.Length; channel++)
                 {
                     target[channel] = Mathf.Lerp(RisePose[channel], FallPose[channel], fall);
                     if (channel == NearAnkleY || channel == FarAnkleY) target[channel] -= 40f / CharacterRigScale.LayoutPixelsPerUnit;
@@ -366,6 +606,150 @@ namespace DaKiem.Client
             {
                 BuildGroundPose();
             }
+        }
+
+        /// <summary>Attacks and hits take over the arms and body; the legs keep doing what they were.</summary>
+        /// <summary>
+        /// A single blow uses its combo row as it stands. A multi-hit skill alternates the first
+        /// two rows and ends on the finisher, with the strike of each row timed to its hit.
+        /// </summary>
+        private void ChooseStance(CastPhase phase, in SwingMoment swing)
+        {
+            stanceStage = phase;
+
+            if (swing.HitCount <= 1)
+            {
+                stanceRow = swing.ComboStep % AttackStances.Length;
+                return;
+            }
+
+            int lastHit = swing.HitCount - 1;
+
+            if (phase == CastPhase.Windup)
+            {
+                stanceRow = 0;
+            }
+            else if (phase == CastPhase.Recovery)
+            {
+                // Rising here leaves the character ready by the time control comes back.
+                stanceStage = CastPhase.None;
+            }
+            else if (phase == CastPhase.Active)
+            {
+                bool striking = swing.HitProgress < StrikeShareOfHit;
+
+                if (swing.HitIndex == lastHit)
+                {
+                    stanceRow = FinisherStance;
+                    stanceStage = striking ? CastPhase.Active : CastPhase.Recovery;
+                    return;
+                }
+
+                int hit = striking ? swing.HitIndex : swing.HitIndex + 1;
+
+                stanceRow = hit == lastHit ? FinisherStance : hit % 2;
+                stanceStage = striking ? CastPhase.Active : CastPhase.Windup;
+            }
+        }
+
+        private void BuildAction(bool hurt, bool dashing, bool grounded)
+        {
+            CastPhase phase = stanceStage;
+            actionBoost = hurt ? ActionEaseBoost : phase == CastPhase.Active ? 3.5f
+                : phase == CastPhase.Windup ? 1.8f : phase == CastPhase.Recovery ? 1.4f : 1f;
+            target[AttackHipDrop] = 0f;
+            target[AttackNearAnkle] = 0f;
+            target[AttackFarAnkle] = 0f;
+            target[AttackStep] = 0f;
+            target[BodyYaw] = 0f;
+            // The rising cut leads with the opposite edge orientation. Roll during
+            // preparation and retain it through the follow-through of that same hit.
+            target[WeaponRoll] = phase != CastPhase.None && stanceRow == 1 ? 180f : 0f;
+
+            if (phase != CastPhase.None)
+            {
+                float[] stance = AttackStances[stanceRow][(int)phase - 1];
+                SetUpperBody(stance[0], stance[1], stance[2], stance[3], stance[4], stance[5]);
+                target[WeaponTurn] = stance[6];
+                target[AttackStep] = stance[10];
+                // Hips lead, shoulders unwind next, and the weapon follows the torso.
+                float coil = stanceRow == 1 ? 0.8f : stanceRow == FinisherStance ? -1f : -0.75f;
+                target[BodyYaw] = phase == CastPhase.Windup ? coil
+                    : phase == CastPhase.Active ? -coil : -coil * 0.55f;
+
+                // Running legs keep their stride; only a body on the ground can brace into a blow.
+                float planted = grounded ? 1f - runAmount : 0f;
+                target[AttackHipDrop] = stance[7] * planted;
+                target[AttackNearAnkle] = stance[8] * planted;
+                target[AttackFarAnkle] = stance[9] * planted;
+                return;
+            }
+
+            // Lower the resting/running guard toward the waist; blend through the
+            // existing walking pose as movement starts and changes speed.
+            float relaxedGuard = grounded && !hurt ? 1f - runAmount * (1f - gait) : 0f;
+            float guardShoulder = CarryShoulder - 15f * relaxedGuard;
+            float guardElbow = CarryElbow - 10f * relaxedGuard;
+            float guardWeapon = CarryWeapon - 10f * relaxedGuard;
+            target[WeaponTurn] = dashing ? DashWeapon : guardWeapon;
+            if (returnAge < 0.18f && !dashing && !hurt)
+            {
+                // Bring the hand forward and lift into guard without sweeping behind the head.
+                target[NearShoulder] = Mathf.Lerp(35f, guardShoulder, returnAge / 0.18f);
+                target[NearElbow] = guardElbow;
+                target[WeaponTurn] = Mathf.Lerp(-80f, guardWeapon, returnAge / 0.18f);
+                return;
+            }
+
+            if (hurt)
+            {
+                SetUpperBody(-30f, 35f, 25f, 30f, 14f, 10f);
+            }
+            else if (!dashing)
+            {
+                target[NearShoulder] = guardShoulder + CarrySwing * Mathf.Cos(runCycle * Mathf.PI * 2f) * runAmount;
+                target[NearElbow] = guardElbow;
+            }
+        }
+
+        private void SetUpperBody(float nearShoulder, float nearElbow, float farShoulder, float farElbow, float torso, float head)
+        {
+            target[NearShoulder] = nearShoulder;
+            target[NearElbow] = nearElbow;
+            target[FarShoulder] = farShoulder;
+            target[FarElbow] = farElbow;
+            target[TorsoTurn] = torso;
+            target[HeadTurn] = head;
+        }
+
+        private void BuildCape(bool grounded, float verticalSpeed, bool dashing)
+        {
+            float upper;
+            float lower;
+            float ripple = CapeAirRipple;
+
+            if (dashing)
+            {
+                upper = CapeDashUpper;
+                lower = CapeDashLower;
+            }
+            else if (!grounded)
+            {
+                float fall = Mathf.InverseLerp(0f, -RiseSpeed, verticalSpeed);
+                upper = Mathf.Lerp(CapeRunUpper / 2f, CapeFallUpper, fall);
+                lower = Mathf.Lerp(CapeRunLower / 2f, CapeFallLower, fall);
+            }
+            else
+            {
+                float speed = runAmount * Mathf.Lerp(0.45f, 1f, gait);
+                upper = Mathf.Lerp(CapeRestUpper, CapeRunUpper, speed);
+                lower = Mathf.Lerp(CapeRestLower, CapeRunLower, speed);
+                ripple = Mathf.Lerp(CapeRestRipple, CapeRunRipple, speed);
+            }
+
+            target[CapeUpper] = upper;
+            target[CapeLower] = lower;
+            target[CapeRipple] = ripple;
         }
 
         private void OffsetAirAnkles()
@@ -425,19 +809,47 @@ namespace DaKiem.Client
 
         private void EaseToTarget(float deltaTime)
         {
+            poseDeltaTime = deltaTime;
             for (int channel = 0; channel < ChannelCount; channel++)
             {
-                float closing = 1f - Mathf.Exp(-Ease[channel] * deltaTime);
-                current[channel] = Mathf.Lerp(current[channel], target[channel], closing);
+                bool isBody = (channel >= NearShoulder && channel <= HeadTurn) || channel == WeaponTurn;
+                float closing = 1f - Mathf.Exp(-Ease[channel] * (isBody ? actionBoost : 1f) * deltaTime);
+                if (stanceStage != CastPhase.None)
+                {
+                    // Fast weight shift, then chest/shoulder rotation, then the striking hand.
+                    float lead = channel == BodyYaw ? 0.012f : channel == TorsoTurn ? 0.018f
+                        : channel == NearShoulder || channel == NearElbow || channel == WeaponTurn ? 0.032f : 0f;
+                    closing *= Mathf.Clamp01((actionAge - lead) / 0.025f);
+                }
+                if (channel == WeaponTurn)
+                {
+                    float turn = Mathf.DeltaAngle(current[channel], target[channel]);
+                    if (stanceStage == CastPhase.Active && Mathf.Abs(turn) > 0.1f)
+                    {
+                        // A heavy chop spans more than 180 degrees. Shortest-angle
+                        // interpolation would send it backwards, through the back swing.
+                        if (stanceRow == 1 && turn < 0f) turn += 360f;
+                        else if (stanceRow != 1 && turn > 0f) turn -= 360f;
+                    }
+                    current[channel] += turn * closing;
+                }
+                else current[channel] = Mathf.Lerp(current[channel], target[channel], closing);
             }
         }
 
         private void Apply()
         {
-            joints[CharacterRig.Hip].localPosition = restPositions[CharacterRig.Hip] + Vector3.down * current[HipDrop];
+            armReach *= Mathf.Exp(-18f * poseDeltaTime);
+            // Keep the wrist correction through the cut; returning it during the
+            // strike could make the tip reverse even while the arm keeps moving.
+            if (stanceStage != CastPhase.Active) wristClearance *= Mathf.Exp(-12f * poseDeltaTime);
+            rig.localPosition = Vector3.right * current[AttackStep];
+            joints[CharacterRig.Hip].localPosition = restPositions[CharacterRig.Hip] + Vector3.down * (current[HipDrop] + current[AttackHipDrop]);
 
-            PoseLeg(CharacterRig.LegNear, CharacterRig.FootNear, new Vector2(current[NearAnkleX], current[NearAnkleY]), current[NearFoot]);
-            PoseLeg(CharacterRig.LegFar, CharacterRig.FootFar, new Vector2(current[FarAnkleX], current[FarAnkleY]), current[FarFoot]);
+            // The ankles rise with a lowered hip, so the feet stay on the ground.
+            float braced = current[AttackHipDrop];
+            PoseLeg(CharacterRig.LegNear, CharacterRig.FootNear, new Vector2(current[NearAnkleX] + current[AttackNearAnkle], current[NearAnkleY] + braced), current[NearFoot]);
+            PoseLeg(CharacterRig.LegFar, CharacterRig.FootFar, new Vector2(current[FarAnkleX] + current[AttackFarAnkle], current[FarAnkleY] + braced), current[FarFoot]);
             shorts.Pose(shapes[CharacterRig.LegNear].Root, nearThigh, shapes[CharacterRig.LegFar].Root, farThigh);
             PoseArm(CharacterRig.ArmNear, CharacterRig.HandNear, current[NearShoulder], current[NearElbow]);
             PoseArm(CharacterRig.ArmFar, CharacterRig.HandFar, current[FarShoulder], current[FarElbow]);
@@ -447,6 +859,75 @@ namespace DaKiem.Client
             Turn(CharacterRig.HairBack, current[HairTurn]);
             Turn(CharacterRig.TailBase, current[TailBaseTurn]);
             Turn(CharacterRig.TailTip, current[TailTipTurn]);
+            equipment.TwistBody(current[BodyYaw]);
+            equipment.RollWeapon(current[WeaponRoll]);
+
+            // The cape hangs from the torso but falls with gravity, so the torso's lean is taken out.
+            equipment.PoseCape(current[CapeUpper] - current[TorsoTurn], current[CapeLower] - current[TorsoTurn], current[CapeRipple], capeRipplePhase);
+            float shoulder = current[NearShoulder];
+            float elbow = current[NearElbow];
+            // Retain the previous correction and release it gradually. Searching near
+            // this pose avoids swapping between two sides of the head on adjacent frames.
+            float preferred = armClearance * Mathf.Exp(-18f * poseDeltaTime);
+            if (!TryClearArm(shoulder, elbow, preferred))
+            {
+                // A broad hat can extend beyond the arm's entire circular reach.
+                // Let the shoulder reach across the torso silhouette, with
+                // the sleeve still attached, instead of overturning the blade.
+                bool clear = false;
+                float initialReach = armReach;
+                for (float offset = 0.01f; offset <= 0.1201f && !clear; offset += 0.01f)
+                {
+                    for (int side = 1; side >= -1 && !clear; side -= 2)
+                    {
+                        float reach = initialReach + offset * side;
+                        if (Mathf.Abs(reach) > 0.0601f) continue;
+                        armReach = reach;
+                        clear = TryClearArm(shoulder, elbow, preferred);
+                    }
+                }
+                if (!clear)
+                {
+                    float oldWrist = wristClearance;
+                    armReach = initialReach;
+                    for (int offset = 4; offset <= 48 && !clear; offset += 4)
+                    for (int side = -1; side <= 1 && !clear; side += 2)
+                    {
+                        // Only a small wrist adjustment is permitted. During a cut
+                        // it must continue in the cut's direction, never reverse it.
+                        if (stanceStage == CastPhase.Active && side != (stanceRow == 1 ? 1 : -1)) continue;
+                        float wrist = oldWrist + offset * side;
+                        if (Mathf.Abs(wrist) > 24f) continue;
+                        wristClearance = wrist;
+                        clear = TryClearArm(shoulder, elbow, preferred);
+                    }
+                    if (!clear)
+                    {
+                        wristClearance = oldWrist;
+                        armClearance = 0f;
+                        armReach = 0f;
+                        PoseArm(CharacterRig.ArmNear, CharacterRig.HandNear, shoulder, elbow);
+                        equipment.TurnWeapon(current[WeaponTurn] + wristClearance - shoulder - elbow);
+                    }
+                }
+            }
+        }
+
+        private bool TryClearArm(float shoulder, float elbow, float preferred)
+        {
+            for (int offset = 0; offset <= 180; offset += 4)
+            for (int side = -1; side <= 1; side += 2)
+            {
+                float correction = Mathf.DeltaAngle(0f, preferred + offset * side);
+                float guided = shoulder + correction;
+                PoseArm(CharacterRig.ArmNear, CharacterRig.HandNear, guided, elbow);
+                if (equipment.TurnWeapon(current[WeaponTurn] + wristClearance - guided - elbow))
+                {
+                    armClearance = correction;
+                    return true;
+                }
+            }
+            return false;
         }
 
         private void PoseLeg(string leg, string foot, Vector2 ankle, float footPitch)
@@ -475,10 +956,13 @@ namespace DaKiem.Client
             LimbShape shape = shapes[arm];
             float upperAngle = shoulderDegrees * Mathf.Deg2Rad;
             float lowerAngle = upperAngle + elbowDegrees * Mathf.Deg2Rad;
-            Vector2 elbow = shape.Root + Hanging(upperAngle) * shape.Upper;
+            // The near/far shoulder separates as the chest opens and closes; the head stays aimed.
+            Vector2 shoulder = shape.Root + Vector2.right * current[BodyYaw] * (arm == CharacterRig.ArmNear ? -0.028f : 0.028f);
+            if (arm == CharacterRig.ArmNear) shoulder.x += armReach;
+            Vector2 elbow = shoulder + Hanging(upperAngle) * shape.Upper;
             Vector2 wrist = elbow + Hanging(lowerAngle) * shape.Lower;
 
-            limbs[arm].Bend(shape.Root, elbow, wrist);
+            limbs[arm].Bend(shoulder, elbow, wrist);
             joints[hand].localPosition = wrist;
             Turn(hand, shoulderDegrees + elbowDegrees);
         }
@@ -557,6 +1041,9 @@ namespace DaKiem.Client
             {
                 HipEase, LegEase, LegEase, LegEase, LegEase, LegEase, LegEase, ArmEase,
                 ArmEase, ArmEase, ArmEase, TorsoEase, HeadEase, HairEase, TailBaseEase, TailTipEase,
+                CapeUpperEase, CapeLowerEase, WeaponEase, CapeRippleEase,
+                AttackBodyEase, AttackBodyEase, AttackBodyEase, AttackBodyEase,
+                22f, 42f,
             };
         }
 
@@ -568,7 +1055,9 @@ namespace DaKiem.Client
         private void Tint(Color color)
         {
             front.Tint(color, frontAlpha);
+            frontGear.Tint(color, frontAlpha);
             shorts.Tint(color, sideAlpha);
+            equipment.Tint(color, sideAlpha);
 
             foreach (ShadedPart part in parts)
             {
@@ -610,6 +1099,11 @@ namespace DaKiem.Client
             renderer.sharedMaterial = partMaterial;
             renderer.sortingOrder = bone.Order;
             parts.Add(new ShadedPart(renderer, ShadeOf(bone.Name)));
+
+            if (bone.Name == CharacterRig.Torso)
+            {
+                torsoRenderer = renderer;
+            }
         }
 
         private void CreateLimb(in CharacterLimb limb)
@@ -629,23 +1123,9 @@ namespace DaKiem.Client
             return name.EndsWith("_far") ? FarShade : 1f;
         }
 
-        private static CharacterBone FindBone(string name)
-        {
-            foreach (CharacterBone candidate in CharacterRig.Bones)
-            {
-                if (candidate.Name == name)
-                {
-                    return candidate;
-                }
-            }
+        private static CharacterBone FindBone(string name) => CharacterRig.Find(name);
 
-            throw new KeyNotFoundException(name);
-        }
-
-        private static Vector3 ToLocal(float layoutX, float layoutY)
-        {
-            return new Vector3(layoutX, -layoutY, 0f) / CharacterRigScale.LayoutPixelsPerUnit;
-        }
+        private static Vector3 ToLocal(float layoutX, float layoutY) => CharacterRig.Local(layoutX, layoutY);
 
         private readonly struct ShadedPart
         {

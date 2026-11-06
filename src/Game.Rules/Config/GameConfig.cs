@@ -17,6 +17,7 @@ namespace Game.Rules
 
         private const int SupportedVersion = 1;
         private const decimal WholePercent = 100m;
+        private const int MinComboHits = 2;
 
         private static readonly Regex IdPattern = new Regex("^[a-z0-9_]+([.][a-z0-9_]+)*$");
 
@@ -352,6 +353,7 @@ namespace Game.Rules
                 Projectile = item.Has("projectile") ? ParseProjectile(item.Object("projectile")) : null,
                 Heal = item.Has("heal") ? ParseHeal(item.Object("heal")) : null,
                 Slow = item.Has("slow") ? ParseSlow(item.Object("slow")) : null,
+                Combo = item.Has("combo") ? ParseCombo(item.Object("combo")) : null,
             };
 
             ReadEntry(item, skill);
@@ -418,6 +420,28 @@ namespace Game.Rules
 
             item.RejectUnknownFields();
             return heal;
+        }
+
+        private static SkillCombo ParseCombo(ConfigObject item)
+        {
+            var percents = new List<decimal>();
+
+            foreach (ConfigObject hit in item.Array("hits"))
+            {
+                percents.Add(hit.PositiveDecimal("damagePercent"));
+                hit.RejectUnknownFields();
+            }
+
+            if (percents.Count < MinComboHits)
+            {
+                throw item.Fail("hits", $"a combo needs at least {MinComboHits} hits");
+            }
+
+            var combo = new SkillCombo { WindowSec = item.Positive("windowSec"), HitDamagePercents = percents };
+
+            ReadEntry(item, combo);
+            item.RejectUnknownFields();
+            return combo;
         }
 
         private static SkillSlow ParseSlow(ConfigObject item)

@@ -20,6 +20,8 @@ namespace DaKiem.Client.Editor
             importer.spritePixelsPerUnit = CharacterRigScale.PixelsPerUnit;
             importer.mipmapEnabled = false;
             importer.textureCompression = TextureImporterCompression.Uncompressed;
+            // Tiny alpha masks used to keep the blade outside the face and headgear.
+            importer.isReadable = assetPath.EndsWith("/head.png") || assetPath.Contains("/hat_") || assetPath.Contains("/weapon_");
         }
     }
 }
