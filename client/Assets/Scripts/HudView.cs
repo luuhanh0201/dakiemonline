@@ -4,21 +4,22 @@ using UnityEngine.UI;
 
 namespace DaKiem.Client
 {
-    /// <summary>Draws the bars, the action buttons and the joystick.</summary>
+    /// <summary>Draws the portrait, the bars, the action buttons and the joystick.</summary>
     public sealed class HudView
     {
         private const float FlashSeconds = 0.12f;
-        private const int DiscTextureSize = 128;
-        private const float BorderShare = 0.04f;
+        private const float PortraitDp = 56f;
         private const float BarWidthDp = 180f;
-        private const float BarHeightDp = 10f;
+        private const float BarHeightDp = 15f;
+        private const float EnergyBarHeightDp = 12f;
         private const float StaminaBarWidthDp = 120f;
-        private const float StaminaBarHeightDp = 6f;
+        private const float StaminaBarHeightDp = 9f;
+        private const float BarInsetDp = 1.5f;
         private const float EdgeDp = 16f;
-        private const float BarGapDp = 6f;
+        private const float BarGapDp = 3f;
         private const int LabelSizeDp = 13;
         private const float BossBarWidthDp = 300f;
-        private const float BossBarHeightDp = 10f;
+        private const float BossBarHeightDp = 15f;
         private const float EndPanelWidthDp = 320f;
         private const float EndPanelHeightDp = 250f;
         private const float ReplayWidthDp = 160f;
@@ -26,10 +27,16 @@ namespace DaKiem.Client
         private const int EndTitleSizeDp = 28;
         private const int EndBodySizeDp = 16;
 
-        private static readonly Color Moon = new Color32(0xDC, 0xE6, 0xFF, 0xC0);
-        private static readonly Color Panel = new Color32(0x14, 0x1B, 0x3A, 0x9E);
-        private static readonly Color Pressed = new Color32(0x74, 0x80, 0xC8, 0xD0);
-        private static readonly Color Dimmed = new Color(1f, 1f, 1f, 0.35f);
+        private static readonly Color Panel = new Color32(0x14, 0x1B, 0x3A, 0xFF);
+        private static readonly Color ButtonFill = new Color32(0x1E, 0x3F, 0x7A, 0xFF);
+        private static readonly Color ButtonLit = new Color32(0x2A, 0x63, 0xB8, 0xFF);
+        private static readonly Color AttackFill = new Color32(0x2A, 0x63, 0xB8, 0xFF);
+        private static readonly Color AttackLit = new Color32(0x3D, 0x8B, 0xF2, 0xFF);
+        private static readonly Color Pressed = new Color32(0xB8, 0xC8, 0xFF, 0xFF);
+        private static readonly Color Dimmed = new Color(0.55f, 0.55f, 0.65f, 1f);
+        private static readonly Color DimmedLabel = new Color(1f, 1f, 1f, 0.75f);
+        private static readonly Color CooldownSweep = new Color32(0x14, 0x1B, 0x3A, 0xB0);
+        private static readonly Color LabelOutline = new Color32(0x14, 0x1B, 0x3A, 0xFF);
         private static readonly Color HealthColor = new Color32(0x46, 0xB3, 0x7E, 0xFF);
         private static readonly Color EnergyColor = new Color32(0x4F, 0x7B, 0xE8, 0xFF);
         private static readonly Color StaminaColor = new Color32(0xF2, 0xC7, 0x6E, 0xFF);
@@ -40,8 +47,10 @@ namespace DaKiem.Client
         private readonly Dictionary<HudButton, Image> buttonImages = new Dictionary<HudButton, Image>();
         private readonly Dictionary<HudButton, float> flashUntil = new Dictionary<HudButton, float>();
         private readonly Dictionary<HudButton, Text> buttonLabels = new Dictionary<HudButton, Text>();
+        private readonly Dictionary<HudButton, Image> cooldownSweeps = new Dictionary<HudButton, Image>();
         private readonly HashSet<HudButton> dimmedButtons = new HashSet<HudButton>();
         private readonly RectTransform root;
+        private readonly Canvas canvas;
         private readonly RectTransform healthFill;
         private readonly RectTransform energyFill;
         private readonly RectTransform staminaFill;
@@ -54,36 +63,47 @@ namespace DaKiem.Client
         private readonly RectTransform joystickKnob;
         private readonly Sprite disc;
         private readonly Sprite attackDisc;
-        private readonly Sprite solid;
+        private readonly Sprite plainDisc;
+        private readonly Sprite barFrame;
+        private readonly Sprite barFill;
+        private readonly Sprite panelFrame;
+        private readonly Sprite actionFrame;
 
         public HudView()
         {
-            disc = CreateDisc(Moon);
-            attackDisc = CreateDisc(AccentColor);
-            solid = Sprite.Create(Texture2D.whiteTexture, new Rect(0f, 0f, 4f, 4f), Vector2.one / 2f);
+            disc = DrawnShapes.Disc(ButtonFill, ButtonLit);
+            attackDisc = DrawnShapes.Disc(AttackFill, AttackLit);
+            plainDisc = DrawnShapes.PlainDisc();
+            barFrame = DrawnShapes.Frame(Panel, false);
+            barFill = DrawnShapes.BarFill();
+            panelFrame = DrawnShapes.Frame(EndPanelColor, true);
+            actionFrame = DrawnShapes.Frame(AccentColor, true);
 
             root = CreateCanvas();
-            healthFill = CreateBar(0, BarWidthDp, BarHeightDp, HealthColor);
-            energyFill = CreateBar(1, BarWidthDp, BarHeightDp, EnergyColor);
-            staminaFill = CreateBar(2, StaminaBarWidthDp, StaminaBarHeightDp, StaminaColor);
+            canvas = root.GetComponent<Canvas>();
+            CreatePortrait();
+            float barLeft = EdgeDp + PortraitDp + BarGapDp;
+            healthFill = CreateBar(barLeft, -EdgeDp, BarWidthDp, BarHeightDp, HealthColor);
+            energyFill = CreateBar(barLeft, -EdgeDp - BarHeightDp - BarGapDp, BarWidthDp, EnergyBarHeightDp, EnergyColor);
+            staminaFill = CreateBar(barLeft, -EdgeDp - BarHeightDp - EnergyBarHeightDp - 2f * BarGapDp, StaminaBarWidthDp, StaminaBarHeightDp, StaminaColor);
 
             foreach (HudButtonSpec spec in HudLayout.Buttons)
             {
                 CreateButton(spec);
             }
 
-            joystickBase = CreateDiscObject("JoystickBase", HudLayout.JoystickDiameterDp, new Color(1f, 1f, 1f, 0.45f));
-            joystickKnob = CreateDiscObject("JoystickKnob", HudLayout.JoystickDiameterDp * 0.4f, new Color(1f, 1f, 1f, 0.85f));
+            joystickBase = CreateDiscObject("JoystickBase", disc, HudLayout.JoystickDiameterDp, new Color(1f, 1f, 1f, 0.6f));
+            joystickKnob = CreateDiscObject("JoystickKnob", attackDisc, HudLayout.JoystickDiameterDp * 0.4f, Color.white);
             ShowJoystick(false, Vector2.zero, Vector2.zero);
 
             bossHealthFill = CreateBossBar();
 
-            RectTransform panel = CreateImage("EndPanel", root, EndPanelColor, solid, new Vector2(EndPanelWidthDp, EndPanelHeightDp));
+            RectTransform panel = CreateFrame("EndPanel", root, Color.white, panelFrame, new Vector2(EndPanelWidthDp, EndPanelHeightDp));
             endPanel = panel.gameObject;
             endTitle = CreateLabel("Title", panel, new Vector2(EndPanelWidthDp, 44f), new Vector2(0f, 90f), EndTitleSizeDp);
             endBody = CreateLabel("Body", panel, new Vector2(EndPanelWidthDp, 110f), new Vector2(0f, 8f), EndBodySizeDp);
 
-            replayButton = CreateImage("Replay", panel, AccentColor, solid, new Vector2(ReplayWidthDp, ReplayHeightDp));
+            replayButton = CreateFrame("Replay", panel, Color.white, actionFrame, new Vector2(ReplayWidthDp, ReplayHeightDp));
             replayButton.anchoredPosition = new Vector2(0f, -85f);
             CreateLabel("Label", replayButton, new Vector2(ReplayWidthDp, ReplayHeightDp), Vector2.zero, EndBodySizeDp).text = "Chơi lại";
             endPanel.SetActive(false);
@@ -111,6 +131,22 @@ namespace DaKiem.Client
         public void ShowBossHealth(float health)
         {
             SetFill(bossHealthFill, BossBarWidthDp, health);
+        }
+
+        /// <summary>Draws the HUD through a camera at a set scale, for the review tools.</summary>
+        public void DrawThrough(Camera camera, float scale)
+        {
+            canvas.renderMode = RenderMode.ScreenSpaceCamera;
+            canvas.worldCamera = camera;
+            canvas.planeDistance = 1f;
+            canvas.scaleFactor = scale;
+            root.GetComponent<CanvasScaler>().enabled = false;
+        }
+
+        /// <summary>Darkens the share of a button still waiting, sweeping away as it recovers.</summary>
+        public void SetCooldown(HudButton button, float share)
+        {
+            cooldownSweeps[button].fillAmount = Mathf.Clamp01(share);
         }
 
         public HudButton ButtonAt(Vector2 screenPosition)
@@ -146,7 +182,7 @@ namespace DaKiem.Client
                 text.text = label;
             }
 
-            text.color = dimmed ? Dimmed : Color.white;
+            text.color = dimmed ? DimmedLabel : Color.white;
 
             if (dimmed)
             {
@@ -183,7 +219,7 @@ namespace DaKiem.Client
 
         private static void SetFill(RectTransform fill, float widthDp, float value)
         {
-            fill.sizeDelta = new Vector2(widthDp * Mathf.Clamp01(value), fill.sizeDelta.y);
+            fill.sizeDelta = new Vector2((widthDp - 2f * BarInsetDp) * Mathf.Clamp01(value), fill.sizeDelta.y);
         }
 
         private RectTransform CreateCanvas()
@@ -199,33 +235,57 @@ namespace DaKiem.Client
             return (RectTransform)host.transform;
         }
 
-        private RectTransform CreateBar(int row, float widthDp, float heightDp, Color color)
+        private void CreatePortrait()
         {
-            float top = -EdgeDp - row * (BarHeightDp + BarGapDp);
-            var size = new Vector2(widthDp, heightDp);
+            var size = new Vector2(PortraitDp, PortraitDp);
+            RectTransform frame = CreateImage("Portrait", root, Color.white, disc, size);
+            frame.anchorMin = frame.anchorMax = frame.pivot = new Vector2(0f, 1f);
+            frame.anchoredPosition = new Vector2(EdgeDp, -EdgeDp);
 
-            RectTransform back = CreateImage("BarBack", root, Panel, solid, size);
+            AddPortraitPart(frame, "Character/Bold/hair_back", -0.04f, -0.02f, 0.72f);
+            AddPortraitPart(frame, "Character/Bold/head", 0f, -0.04f, 0.66f);
+            AddPortraitPart(frame, "Character/Bold/hair_front", 0.09f, 0.12f, 0.86f);
+        }
+
+        private static void AddPortraitPart(RectTransform frame, string art, float x, float y, float widthShare)
+        {
+            Sprite sprite = Resources.Load<Sprite>(art);
+            float width = PortraitDp * widthShare;
+            var size = new Vector2(width, width * sprite.rect.height / sprite.rect.width);
+            RectTransform part = CreateImage(art, frame, Color.white, sprite, size);
+            part.anchoredPosition = new Vector2(x, y) * PortraitDp;
+        }
+
+        private RectTransform CreateBar(float left, float top, float widthDp, float heightDp, Color color)
+        {
+            RectTransform back = CreateFrame("BarBack", root, Color.white, barFrame, new Vector2(widthDp, heightDp));
             back.anchorMin = back.anchorMax = back.pivot = new Vector2(0f, 1f);
-            back.anchoredPosition = new Vector2(EdgeDp, top);
-
-            RectTransform fill = CreateImage("BarFill", back, color, solid, size);
-            fill.anchorMin = fill.anchorMax = fill.pivot = new Vector2(0f, 0.5f);
-            fill.anchoredPosition = Vector2.zero;
-            return fill;
+            back.anchoredPosition = new Vector2(left, top);
+            return CreateBarFill(back, widthDp, heightDp, color);
         }
 
         private RectTransform CreateBossBar()
         {
-            var size = new Vector2(BossBarWidthDp, BossBarHeightDp);
-
-            RectTransform back = CreateImage("BossBarBack", root, Panel, solid, size);
+            RectTransform back = CreateFrame("BossBarBack", root, Color.white, barFrame, new Vector2(BossBarWidthDp, BossBarHeightDp));
             back.anchorMin = back.anchorMax = back.pivot = new Vector2(0.5f, 1f);
             back.anchoredPosition = new Vector2(0f, -EdgeDp);
+            return CreateBarFill(back, BossBarWidthDp, BossBarHeightDp, BossHealthColor);
+        }
 
-            RectTransform fill = CreateImage("BossBarFill", back, BossHealthColor, solid, size);
+        private RectTransform CreateBarFill(RectTransform back, float widthDp, float heightDp, Color color)
+        {
+            var size = new Vector2(widthDp - 2f * BarInsetDp, heightDp - 2f * BarInsetDp);
+            RectTransform fill = CreateFrame("BarFill", back, color, barFill, size);
             fill.anchorMin = fill.anchorMax = fill.pivot = new Vector2(0f, 0.5f);
-            fill.anchoredPosition = Vector2.zero;
+            fill.anchoredPosition = new Vector2(BarInsetDp, 0f);
             return fill;
+        }
+
+        private static RectTransform CreateFrame(string name, Transform parent, Color color, Sprite sprite, Vector2 size)
+        {
+            RectTransform rect = CreateImage(name, parent, color, sprite, size);
+            rect.GetComponent<Image>().type = Image.Type.Sliced;
+            return rect;
         }
 
         private static Text CreateLabel(string name, RectTransform parent, Vector2 size, Vector2 position, int fontSize)
@@ -242,6 +302,8 @@ namespace DaKiem.Client
             text.alignment = TextAnchor.MiddleCenter;
             text.color = Color.white;
             text.raycastTarget = false;
+            text.fontStyle = FontStyle.Bold;
+            label.AddComponent<Outline>().effectColor = LabelOutline;
             return text;
         }
 
@@ -254,14 +316,22 @@ namespace DaKiem.Client
             button.anchoredPosition = spec.CentreDp;
             buttonImages[spec.Button] = button.GetComponent<Image>();
 
+            Image sweep = CreateImage("Cooldown", button, CooldownSweep, plainDisc, size).GetComponent<Image>();
+            sweep.type = Image.Type.Filled;
+            sweep.fillMethod = Image.FillMethod.Radial360;
+            sweep.fillOrigin = (int)Image.Origin360.Top;
+            sweep.fillClockwise = false;
+            sweep.fillAmount = 0f;
+            cooldownSweeps[spec.Button] = sweep;
+
             Text text = CreateLabel("Label", button, size, Vector2.zero, LabelSizeDp);
             text.text = spec.Label;
             buttonLabels[spec.Button] = text;
         }
 
-        private RectTransform CreateDiscObject(string name, float diameterDp, Color color)
+        private RectTransform CreateDiscObject(string name, Sprite sprite, float diameterDp, Color color)
         {
-            RectTransform rect = CreateImage(name, root, color, disc, new Vector2(diameterDp, diameterDp));
+            RectTransform rect = CreateImage(name, root, color, sprite, new Vector2(diameterDp, diameterDp));
             rect.anchorMin = rect.anchorMax = Vector2.zero;
             return rect;
         }
@@ -278,29 +348,6 @@ namespace DaKiem.Client
             image.color = color;
             image.raycastTarget = false;
             return rect;
-        }
-
-        private static Sprite CreateDisc(Color border)
-        {
-            var texture = new Texture2D(DiscTextureSize, DiscTextureSize, TextureFormat.RGBA32, false);
-            float centre = (DiscTextureSize - 1) / 2f;
-            float radius = DiscTextureSize / 2f - 1f;
-            float inner = radius * (1f - BorderShare);
-
-            for (int y = 0; y < DiscTextureSize; y++)
-            {
-                for (int x = 0; x < DiscTextureSize; x++)
-                {
-                    float distance = Vector2.Distance(new Vector2(x, y), new Vector2(centre, centre));
-                    Color color = distance <= inner ? Panel : border;
-                    color.a *= Mathf.Clamp01(radius - distance + 0.5f);
-                    texture.SetPixel(x, y, color);
-                }
-            }
-
-            texture.Apply();
-            var rect = new Rect(0f, 0f, DiscTextureSize, DiscTextureSize);
-            return Sprite.Create(texture, rect, Vector2.one / 2f);
         }
     }
 }

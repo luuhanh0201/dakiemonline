@@ -28,6 +28,8 @@ namespace DaKiem.Client
         private bool replayPressed;
 #if UNITY_STANDALONE
         private GearSlot? gearPressed;
+        private bool slashStylePressed;
+        private bool bossHoldPressed;
 #endif
 
         public InputReader(HudView hud)
@@ -77,7 +79,23 @@ namespace DaKiem.Client
         }
 
 #if UNITY_STANDALONE
-        /// <summary>Returns the slot whose item should change, once per press of F1 to F5.</summary>
+        /// <summary>True once per press of F5, which stops or restarts the boss for trying skills.</summary>
+        public bool ConsumeBossHoldChange()
+        {
+            bool pressed = bossHoldPressed;
+            bossHoldPressed = false;
+            return pressed;
+        }
+
+        /// <summary>True once per press of F4, which compares the two sets of sword effects.</summary>
+        public bool ConsumeSlashStyleChange()
+        {
+            bool pressed = slashStylePressed;
+            slashStylePressed = false;
+            return pressed;
+        }
+
+        /// <summary>Returns the slot whose item should change, once per press of F1 to F3.</summary>
         public GearSlot? ConsumeGearChange()
         {
             GearSlot? pressed = gearPressed;
@@ -163,6 +181,8 @@ namespace DaKiem.Client
             if (keys.f1Key.wasPressedThisFrame) gearPressed = GearSlot.Weapon;
             if (keys.f2Key.wasPressedThisFrame) gearPressed = GearSlot.Armor;
             if (keys.f3Key.wasPressedThisFrame) gearPressed = GearSlot.Pants;
+            slashStylePressed |= keys.f4Key.wasPressedThisFrame;
+            bossHoldPressed |= keys.f5Key.wasPressedThisFrame;
 
             if (hud.EndScreenVisible)
             {

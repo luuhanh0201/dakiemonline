@@ -60,6 +60,8 @@ namespace DaKiem.Client.Editor
 
             for (int hit = 0; hit < Hits; hit++)
             {
+                bool sawTrail = false;
+                var trail = GameObject.Find("Water blade trail").GetComponent<MeshRenderer>();
                 for (int frame = 0; frame < Cells * FramesPerCell; frame++)
                 {
                     CastPhase phase = frame < WindupFrames ? CastPhase.Windup
@@ -72,6 +74,7 @@ namespace DaKiem.Client.Editor
                     }
 
                     view.Show(Vector2.zero, 1, true, 0f, false, phase, false, 1f / FramesPerSecond, new SwingMoment(hit, 0, 1, 0f));
+                    sawTrail |= trail.enabled;
 
                     if (frame % FramesPerCell == 0)
                     {
@@ -81,6 +84,7 @@ namespace DaKiem.Client.Editor
                         sheet.ReadPixels(new Rect(0, 0, CellWidth, CellHeight), frame / FramesPerCell * CellWidth, (Rows - 1 - hit) * CellHeight);
                     }
                 }
+                if (!sawTrail) throw new InvalidOperationException("Missing blade trail for combo hit " + hit);
             }
 
             PlayUltimate(view, camera, cell, sheet, output);

@@ -3,73 +3,45 @@ using UnityEngine;
 namespace DaKiem.Client
 {
     /// <summary>
-    /// A fading ribbon behind the blade during a swing. The blade can turn a long way in one
-    /// frame, even past half a circle on a slow phone, so each step is filled in along the arc
-    /// in the direction of the swing to keep the ribbon curved and on the right side.
+    /// A ribbon of water drawn along the blade's path. The blade can turn a long way in one frame,
+    /// so its arc is filled in and then revealed a little at a time from the old position forward.
+    /// Each sample dies after the same time, so the ribbon dissolves from its tail. A change of
+    /// swing starts a new run and the old one is left to finish dissolving.
     /// </summary>
     public sealed class WeaponTrail
     {
-        private const int MaxSamples = 40;
-        private const int MinStepsPerFrame = 4;
-        private const float DegreesPerStep = 20f;
+        private const int MaxSamples = 96;
+        private const int MinStepsPerFrame = 2;
+        private const float DegreesPerStep = 6f;
         private const float BackwardLimitDegrees = 90f;
-        private const int SortingOrder = 38;
-        private const float Lifetime = 0.16f;
-        private const float MaxOpacity = 0.85f;
-        private const float FadePower = 1.6f;
+        private const float RevealSamplesPerSecond = 700f;
+        private const float Lifetime = 0.18f;
+        private const int TailTaperSamples = 6;
+        private const int HeadTaperSamples = 2;
+        private const int MinRunSamples = 2;
 
-        private static readonly Color TrailColor = new Color(0.8f, 0.94f, 1f);
-
-        private readonly Mesh mesh = new Mesh();
+        private readonly WaterRibbon water = new WaterRibbon("Water blade trail", 32);
         private readonly Vector3[] inner = new Vector3[MaxSamples];
         private readonly Vector3[] outer = new Vector3[MaxSamples];
         private readonly float[] ages = new float[MaxSamples];
-        private readonly Vector3[] vertices = new Vector3[MaxSamples * 2];
-        private readonly Color[] colors = new Color[MaxSamples * 2];
-        private readonly MeshRenderer renderer;
+        private readonly bool[] startsRun = new bool[MaxSamples];
+        private readonly int[] sweeps = new int[MaxSamples];
+        private readonly Vector3[] waitingInner = new Vector3[MaxSamples];
+        private readonly Vector3[] waitingOuter = new Vector3[MaxSamples];
+        private readonly Vector3[] path = new Vector3[MaxSamples];
+        private readonly float[] widths = new float[MaxSamples];
         private Vector3 lastGrip;
         private Vector3 lastInner;
         private Vector3 lastOuter;
         private bool wasDrawing;
+        private bool nextStartsRun = true;
         private int count;
+        private int waitingStart;
+        private int waitingEnd;
         private float strength;
-
-        public WeaponTrail()
-        {
-            var host = new GameObject("WeaponTrail");
-            var material = new Material(Shader.Find(LimbStrip.ShaderName)) { mainTexture = Texture2D.whiteTexture };
-            var uv = new Vector2[vertices.Length];
-            var triangles = new int[(MaxSamples - 1) * 6];
-
-            for (int index = 0; index < uv.Length; index++)
-            {
-                uv[index] = Vector2.one;
-            }
-
-            for (int sample = 0; sample < MaxSamples - 1; sample++)
-            {
-                int first = sample * 2;
-                int at = sample * 6;
-                triangles[at] = first;
-                triangles[at + 1] = first + 1;
-                triangles[at + 2] = first + 2;
-                triangles[at + 3] = first + 1;
-                triangles[at + 4] = first + 3;
-                triangles[at + 5] = first + 2;
-            }
-
-            mesh.vertices = vertices;
-            mesh.uv = uv;
-            mesh.colors = colors;
-            mesh.triangles = triangles;
-            mesh.MarkDynamic();
-
-            host.AddComponent<MeshFilter>().sharedMesh = mesh;
-            renderer = host.AddComponent<MeshRenderer>();
-            renderer.sharedMaterial = material;
-            renderer.sortingOrder = SortingOrder;
-            renderer.enabled = false;
-        }
+        private float clock;
+        private float revealBudget;
+        private int lastSweep;
 
         /// <param name="drawing">True while the blade should leave a mark.</param>
         /// <param name="grip">The point the blade turns around.</param>
@@ -80,13 +52,23 @@ namespace DaKiem.Client
         public void Show(bool drawing, Vector3 grip, Vector3 bladeInner, Vector3 bladeOuter, int sweep, float opacity, float deltaTime)
         {
             Age(deltaTime);
+            clock += deltaTime;
+
+            if (drawing && wasDrawing && (sweep != lastSweep || (grip - lastGrip).sqrMagnitude > 4f))
+            {
+                wasDrawing = false;
+            }
 
             if (drawing)
             {
                 strength = opacity;
 
-                // The pose only changes on its own frames, and a repeat would push the arc out.
-                if (wasDrawing && bladeOuter != lastOuter)
+                if (!wasDrawing)
+                {
+                    FinishWaiting();
+                    nextStartsRun = true;
+                }
+                else if (bladeOuter != lastOuter)
                 {
                     FillArc(grip, bladeInner, bladeOuter, sweep);
                 }
@@ -97,12 +79,15 @@ namespace DaKiem.Client
             }
 
             wasDrawing = drawing;
+            lastSweep = sweep;
+            Reveal(deltaTime, sweep);
             Draw();
         }
 
         private void Age(float deltaTime)
         {
             int kept = 0;
+            bool carriedStart = false;
 
             for (int sample = 0; sample < count; sample++)
             {
@@ -113,7 +98,14 @@ namespace DaKiem.Client
                     inner[kept] = inner[sample];
                     outer[kept] = outer[sample];
                     ages[kept] = age;
+                    startsRun[kept] = startsRun[sample] || carriedStart;
+                    sweeps[kept] = sweeps[sample];
+                    carriedStart = false;
                     kept++;
+                }
+                else
+                {
+                    carriedStart |= startsRun[sample];
                 }
             }
 
@@ -136,7 +128,7 @@ namespace DaKiem.Client
                 float t = step / (float)steps;
                 Vector3 centre = Vector3.Lerp(lastGrip, grip, t);
 
-                Add(
+                Wait(
                     centre + AlongArc(lastInner - lastGrip, bladeInner - grip, angle, t),
                     centre + AlongArc(lastOuter - lastGrip, bladeOuter - grip, angle, t));
             }
@@ -147,48 +139,117 @@ namespace DaKiem.Client
             return Quaternion.AngleAxis(angle * t, Vector3.forward) * from.normalized * Mathf.Lerp(from.magnitude, to.magnitude, t);
         }
 
-        private void Add(Vector3 near, Vector3 far)
+        private void Wait(Vector3 near, Vector3 far)
+        {
+            if (waitingEnd == MaxSamples)
+            {
+                FinishWaiting();
+            }
+
+            waitingInner[waitingEnd] = near;
+            waitingOuter[waitingEnd] = far;
+            waitingEnd++;
+        }
+
+        private void Reveal(float deltaTime, int sweep)
+        {
+            revealBudget += RevealSamplesPerSecond * deltaTime;
+
+            while (revealBudget >= 1f && waitingStart < waitingEnd)
+            {
+                Add(waitingInner[waitingStart], waitingOuter[waitingStart], sweep);
+                waitingStart++;
+                revealBudget -= 1f;
+            }
+
+            if (waitingStart == waitingEnd)
+            {
+                waitingStart = 0;
+                waitingEnd = 0;
+                revealBudget = 0f;
+            }
+        }
+
+        /// <summary>Shows at once whatever is still waiting, before a new swing begins.</summary>
+        private void FinishWaiting()
+        {
+            while (waitingStart < waitingEnd)
+            {
+                Add(waitingInner[waitingStart], waitingOuter[waitingStart], lastSweep);
+                waitingStart++;
+            }
+
+            waitingStart = 0;
+            waitingEnd = 0;
+            revealBudget = 0f;
+        }
+
+        private void Add(Vector3 near, Vector3 far, int sweep)
         {
             if (count == MaxSamples)
             {
                 System.Array.Copy(inner, 1, inner, 0, count - 1);
                 System.Array.Copy(outer, 1, outer, 0, count - 1);
                 System.Array.Copy(ages, 1, ages, 0, count - 1);
+                System.Array.Copy(startsRun, 1, startsRun, 0, count - 1);
+                System.Array.Copy(sweeps, 1, sweeps, 0, count - 1);
                 count--;
             }
 
             inner[count] = near;
             outer[count] = far;
             ages[count] = 0f;
+            startsRun[count] = nextStartsRun;
+            sweeps[count] = sweep;
+            nextStartsRun = false;
             count++;
         }
 
         private void Draw()
         {
-            renderer.enabled = count > 1;
+            if (count < MinRunSamples)
+            {
+                water.Hide();
+                return;
+            }
 
-            if (count < 2)
+            water.Begin(Mathf.Lerp(0.82f, 1f, strength));
+            int first = 0;
+
+            for (int sample = 1; sample <= count; sample++)
+            {
+                if (sample == count || startsRun[sample])
+                {
+                    DrawRun(first, sample - first);
+                    first = sample;
+                }
+            }
+
+            water.End();
+        }
+
+        private void DrawRun(int first, int length)
+        {
+            if (length < MinRunSamples)
             {
                 return;
             }
 
-            for (int sample = 0; sample < MaxSamples; sample++)
+            for (int place = 0; place < length; place++)
             {
-                // Spare samples collapse onto the newest one, so they draw nothing.
-                int source = Mathf.Min(sample, count - 1);
-                float life = 1f - ages[source] / Lifetime;
-                var color = TrailColor;
+                int sample = first + place;
+                float life = Mathf.Clamp01(1f - ages[sample] / Lifetime);
+                float tail = Mathf.Clamp01(place / (float)TailTaperSamples);
+                float head = Mathf.Clamp01((length - 1 - place) / (float)HeadTaperSamples);
 
-                color.a = sample < count ? Mathf.Pow(life, FadePower) * MaxOpacity * strength : 0f;
-                vertices[sample * 2] = inner[source];
-                vertices[sample * 2 + 1] = outer[source];
-                colors[sample * 2] = new Color(color.r, color.g, color.b, 0f);
-                colors[sample * 2 + 1] = color;
+                // Water hugs the outer blade arc. The open centre leaves the fighter readable.
+                path[place] = Vector3.Lerp(inner[sample], outer[sample], 0.82f);
+                widths[place] = (outer[sample] - inner[sample]).magnitude * Mathf.Lerp(0.16f, 0.25f, strength)
+                    * Mathf.Sqrt(life) * tail * head;
             }
 
-            mesh.vertices = vertices;
-            mesh.colors = colors;
-            mesh.RecalculateBounds();
+            // A clockwise swing has its outside on the left of its path.
+            water.BladeStroke(path, widths, length, Mathf.Floor(clock * 18f) * 0.7f, sweeps[first] < 0 ? 1f : -1f);
         }
     }
 }

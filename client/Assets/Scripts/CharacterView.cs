@@ -93,10 +93,14 @@ namespace DaKiem.Client
         // Arms and body snap into an attack or a hit far faster than they settle afterwards.
         private const float ActionEaseBoost = 3f;
 
+        // The blade reaches the end of its arc in about 40 milliseconds.
+        private const float SwingEaseBoost = 3f;
+        private const float ReturnSeconds = 0.18f;
+
         // After a blow lands the swing carries on for a moment, then the pose holds briefly.
-        private const float ImpactDelay = 0.05f;
-        private const float ImpactHold = 0.05f;
-        private const float FinisherHold = 0.1f;
+        private const float ImpactDelay = 0.03f;
+        private const float ImpactHold = 0.03f;
+        private const float FinisherHold = 0.06f;
 
         // Row of the heaviest blow in AttackStances.
         private const int FinisherStance = 2;
@@ -149,6 +153,9 @@ namespace DaKiem.Client
         private const float CarrySwing = 3f;
         private const float CarryWeapon = -30f;
         private const float DashWeapon = 100f;
+
+        // A hit knocks the blade down in front, or a long sword shows above the head like a horn.
+        private const float HurtWeapon = -125f;
 
         private const float FrontShowsBelowRun = 0.15f;
 
@@ -251,6 +258,7 @@ namespace DaKiem.Client
         private float wristClearance;
         private float poseDeltaTime = 1f / 60f;
         private float poseFrameLeft;
+        private float trailFollowThrough;
         private float frontAmount;
         private float frontAlpha;
         private float sideAlpha = 1f;
@@ -274,6 +282,9 @@ namespace DaKiem.Client
         private float landing;
         private float lastX;
         private bool wasGrounded = true;
+
+        /// <summary>Off, the pose follows every frame, for the tools that measure the feet.</summary>
+        public bool StepsPose { get; set; } = true;
 
         public CharacterView()
         {
@@ -428,14 +439,20 @@ namespace DaKiem.Client
                 current[NearFoot] = target[NearFoot];
                 current[FarFoot] = target[FarFoot];
             }
+            // Short attacks can finish their hit window while hit-stop still holds the pose.
+            // Let the blade finish its visible arc into recovery without extending damage.
+            trailFollowThrough = stanceStage == CastPhase.Active ? 0.12f : Mathf.Max(0f, trailFollowThrough - deltaTime);
             poseFrameLeft -= deltaTime;
-            if (poseFrameLeft <= 0f)
+
+            // A blow runs every frame from windup to recovery, so it never changes rhythm midway.
+            // Only standing, walking and running keep the stepped, hand-drawn look.
+            if (poseFrameLeft <= 0f || !StepsPose || stanceStage != CastPhase.None || returnAge < ReturnSeconds || trailFollowThrough > 0f)
             {
                 poseFrameLeft = 1f / PoseFramesPerSecond;
                 Apply();
             }
             trail.Show(
-                stanceStage == CastPhase.Active,
+                stanceStage == CastPhase.Active || stanceStage == CastPhase.Recovery && trailFollowThrough > 0f,
                 equipment.GripPoint,
                 equipment.BladeInnerPoint,
                 equipment.BladeOuterPoint,
@@ -643,7 +660,7 @@ namespace DaKiem.Client
         private void BuildAction(bool hurt, bool dashing, bool grounded)
         {
             CastPhase phase = stanceStage;
-            actionBoost = hurt ? ActionEaseBoost : phase == CastPhase.Active ? 3.5f
+            actionBoost = hurt ? ActionEaseBoost : phase == CastPhase.Active ? SwingEaseBoost
                 : phase == CastPhase.Windup ? 1.8f : phase == CastPhase.Recovery ? 1.4f : 1f;
             target[AttackHipDrop] = 0f;
             target[AttackNearAnkle] = 0f;
@@ -692,6 +709,7 @@ namespace DaKiem.Client
             if (hurt)
             {
                 SetUpperBody(-30f, 35f, 25f, 30f, 14f, 10f);
+                target[WeaponTurn] = HurtWeapon;
             }
             else if (!dashing)
             {
@@ -775,9 +793,9 @@ namespace DaKiem.Client
                 if (stanceStage != CastPhase.None)
                 {
                     // Fast weight shift, then chest/shoulder rotation, then the striking hand.
-                    float lead = channel == BodyYaw ? 0.012f : channel == TorsoTurn ? 0.018f
-                        : channel == NearShoulder || channel == NearElbow || channel == WeaponTurn ? 0.032f : 0f;
-                    closing *= Mathf.Clamp01((actionAge - lead) / 0.025f);
+                    float lead = channel == BodyYaw ? 0.004f : channel == TorsoTurn ? 0.008f
+                        : channel == NearShoulder || channel == NearElbow || channel == WeaponTurn ? 0.014f : 0f;
+                    closing *= Mathf.Clamp01((actionAge - lead) / 0.012f);
                 }
                 if (channel == WeaponTurn)
                 {

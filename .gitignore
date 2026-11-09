@@ -30,3 +30,7 @@ docs/
 
 # Built by tools/sync-rules.ps1
 client/Assets/Plugins/Game.Rules/*.dll
+
+# Asset Store packages: their licence forbids sharing the files
+client/Assets/Resources/ThirdParty/
+client/Assets/Resources/ThirdParty.meta

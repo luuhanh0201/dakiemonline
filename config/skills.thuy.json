@@ -4,14 +4,14 @@
     {
       "id": "thuy.danh_thuong",
       "status": "THU",
-      "source": "GDD 18.1, SPEC-0.5 buoc 4",
+      "source": "GDD 18.1, SPEC-0.5 buoc 4; thu don 0,2 theo yeu cau nguoi dung 09/11/2026",
       "slot": "attack",
       "cooldownSec": 0,
       "energyCost": 0,
       "baseDamage": 0,
       "attackCoefficient": 0.6,
       "windupSec": 0.15,
-      "recoverySec": 0.35,
+      "recoverySec": 0.2,
       "moveSpeedPercent": 60,
       "allowedInAir": true,
       "activePhases": [

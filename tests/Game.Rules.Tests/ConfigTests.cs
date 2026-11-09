@@ -92,7 +92,7 @@ namespace Game.Rules.Tests
         }
 
         [Theory]
-        [InlineData("thuy.danh_thuong", 0d, 0, 0.15d, 0.35d, 60d, true)]
+        [InlineData("thuy.danh_thuong", 0d, 0, 0.15d, 0.2d, 60d, true)]
         [InlineData("thuy.kiem_khi", 4d, 8, 0.2d, 0.2d, 60d, true)]
         [InlineData("thuy.hoi_mau", 20d, 25, 0.3d, 0.2d, 0d, false)]
         [InlineData("thuy.chem_tien", 7d, 12, 0.1d, 0.3d, 0d, false)]
@@ -165,13 +165,13 @@ namespace Game.Rules.Tests
         }
 
         [Fact]
-        public void BasicAttackTakesSixTenthsOfASecond()
+        public void BasicAttackTakesUnderHalfASecond()
         {
             SkillConfig skill = Skill("thuy.danh_thuong");
 
             double total = skill.WindupSec + skill.ActivePhases.Sum(phase => phase.DurationSec) + skill.RecoverySec;
 
-            Assert.Equal(0.6d, total, 10);
+            Assert.Equal(0.45d, total, 10);
         }
 
         [Fact]

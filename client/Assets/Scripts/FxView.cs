@@ -4,63 +4,83 @@ using UnityEngine;
 
 namespace DaKiem.Client
 {
-    /// <summary>Placeholder effects: blocks for hit areas and projectiles, a flash for healing.</summary>
+    /// <summary>Bounded, reusable water drawings driven by combat events and active hit windows.</summary>
     public sealed class FxView
     {
-        private const int SortingOrder = 40;
-        private const int WarningOrder = 41;
-        private const float HurtFlashSeconds = 0.2f;
-        private const float HealFlashSeconds = 0.3f;
-        private const float HealFlashSize = 1.6f;
-
-        private static readonly Color HitColor = new Color32(0x3D, 0x8B, 0xF2, 0x80);
-        private static readonly Color ProjectileColor = new Color32(0x9C, 0xC4, 0xFA, 0xFF);
-        private static readonly Color HealColor = new Color32(0x46, 0xB3, 0x7E, 0x80);
-        private static readonly Color WarningColor = new Color32(0xD9, 0x4F, 0x4F, 0x70);
-
-        private readonly WorldView world;
-        private readonly Transform hitArea;
-        private readonly Transform healFlash;
+        private const int MaxEffects = 32;
+        private const int MaxProjectiles = 16;
         private readonly Transform warningZone;
-        private readonly List<Transform> projectiles = new List<Transform>();
-        private float healFlashUntil;
-        private float hurtFlashUntil;
+        private readonly List<WaterEffect> effects = new List<WaterEffect>();
+        private readonly List<WaterEffect> projectiles = new List<WaterEffect>();
+        private readonly PackageSlashFx packageSlash = new PackageSlashFx();
+        private readonly WaterSprites drawnWater = new WaterSprites();
+        private Simulation lastFight;
+        private SkillConfig lastSkill;
+        private int lastHitIndex = -1, replacement;
+        private float hurtFlashUntil, clock;
+        private float shakeAt = -1f;
+        private readonly WorldView world;
 
         public FxView(WorldView world)
         {
             this.world = world;
-            hitArea = world.CreateBlock("HitArea", HitColor, SortingOrder, Vector2.one).transform;
-            healFlash = world.CreateBlock("HealFlash", HealColor, SortingOrder, Vector2.one * HealFlashSize).transform;
-            warningZone = world.CreateBlock("WarningZone", WarningColor, WarningOrder, Vector2.one).transform;
+            warningZone = world.CreateBlock("WarningZone", new Color32(0xD9, 0x4F, 0x4F, 0x70), 41, Vector2.one).transform;
         }
 
         public bool PlayerHurt => Time.unscaledTime < hurtFlashUntil;
 
-        public void Show(Simulation fight, BossConfig boss)
+        /// <summary>Compares the Free Slash VFX blows with the game's own.</summary>
+        public void ToggleSlashPackage() => packageSlash.Toggle();
+        public int PooledEffectCount => effects.Count;
+        public int ActiveEffectCount
         {
-            ShowBox(hitArea, Combat.ActiveHitbox(fight.Combat, fight.Player));
+            get
+            {
+                int count = 0;
+                foreach (var effect in effects) if (effect.Playing) count++;
+                foreach (var effect in projectiles) if (effect.Playing) count++;
+                return count;
+            }
+        }
+
+        public void Show(Simulation fight, BossConfig boss, float frameSeconds = -1f)
+        {
+            if (fight != lastFight)
+            {
+                foreach (var effect in effects) effect.Hide();
+                foreach (var effect in projectiles) effect.Hide();
+                drawnWater.Clear();
+                shakeAt = -1f;
+                lastFight = fight; lastSkill = null; lastHitIndex = -1;
+                hurtFlashUntil = 0f; clock = 0f;
+            }
+            float dt = Mathf.Max(0f, frameSeconds < 0f ? Time.deltaTime : frameSeconds);
+            clock += dt;
+            foreach (var effect in effects) effect.Advance(dt);
+            drawnWater.Advance(dt);
+            if (shakeAt >= 0f && clock >= shakeAt)
+            {
+                world.Shake();
+                shakeAt = -1f;
+            }
             ShowBox(warningZone, BossAi.WarningZone(fight.Boss, boss));
             ShowProjectiles(fight.Combat.Projectiles);
-            ShowHealFlash(fight.Player, fight.CombatEvents);
-
-            foreach (BossEvent item in fight.BossEvents)
+            StartSlash(fight);
+            foreach (CombatEvent item in fight.CombatEvents)
             {
-                if (item.Kind == BossEventKind.PlayerHit)
-                {
-                    hurtFlashUntil = Time.unscaledTime + HurtFlashSeconds;
-                }
+                if (item.Kind == CombatEventKind.SkillHit) StartSpark(fight, boss, item);
+                else if (item.Kind == CombatEventKind.SelfHealed || item.Kind == CombatEventKind.PotionUsed)
+                    Play(WaterForm.Heal, new Vector2((float)fight.Player.X, (float)fight.Player.Y + 0.5f),
+                        new Vector2(1.3f, 1.2f), 1, 0.8f);
             }
+            foreach (BossEvent item in fight.BossEvents)
+                if (item.Kind == BossEventKind.PlayerHit) hurtFlashUntil = Time.unscaledTime + 0.2f;
         }
 
         private static void ShowBox(Transform block, CombatBox? box)
         {
             block.gameObject.SetActive(box != null);
-
-            if (box == null)
-            {
-                return;
-            }
-
+            if (box == null) return;
             CombatBox area = box.Value;
             block.position = new Vector3((float)(area.MinX + area.MaxX) / 2f, (float)(area.MinY + area.MaxY) / 2f, 0f);
             block.localScale = new Vector3((float)(area.MaxX - area.MinX), (float)(area.MaxY - area.MinY), 1f);
@@ -68,43 +88,104 @@ namespace DaKiem.Client
 
         private void ShowProjectiles(IReadOnlyList<Projectile> flying)
         {
-            while (projectiles.Count < flying.Count)
+            int count = Mathf.Min(flying.Count, MaxProjectiles);
+            while (projectiles.Count < count) projectiles.Add(new WaterEffect("Water projectile"));
+            for (int i = 0; i < projectiles.Count; i++)
             {
-                projectiles.Add(world.CreateBlock("Projectile", ProjectileColor, SortingOrder, Vector2.one).transform);
-            }
-
-            for (int index = 0; index < projectiles.Count; index++)
-            {
-                bool inUse = index < flying.Count;
-                projectiles[index].gameObject.SetActive(inUse);
-
-                if (inUse)
-                {
-                    Projectile shot = flying[index];
-                    float size = (float)shot.Width;
-                    projectiles[index].position = new Vector3((float)shot.X, (float)shot.Y, 0f);
-                    projectiles[index].localScale = new Vector3(size, size, 1f);
-                }
+                if (i >= count) { projectiles[i].Hide(); continue; }
+                Projectile shot = flying[i];
+                projectiles[i].Projectile(new Vector2((float)shot.X, (float)shot.Y), (float)shot.Width * 1.9f, shot.Direction, clock);
             }
         }
 
-        private void ShowHealFlash(MovementState movement, IReadOnlyList<CombatEvent> events)
+        private void StartSlash(Simulation fight)
         {
-            foreach (CombatEvent item in events)
+            CombatState combat = fight.Combat;
+            SkillConfig skill = combat.Phase == CastPhase.Active ? combat.Casting : null;
+            if (skill == null) { lastSkill = null; lastHitIndex = -1; return; }
+            if (skill == lastSkill && combat.ActiveHitIndex == lastHitIndex) return;
+            lastSkill = skill; lastHitIndex = combat.ActiveHitIndex;
+            int facing = fight.Player.Facing;
+            var feet = new Vector2((float)fight.Player.X, (float)fight.Player.Y);
+            float reach = skill.Hitbox == null ? 0f : (float)skill.Hitbox.Width;
+            if (packageSlash.Enabled && PlayPackageSlash(combat, skill, feet, facing, reach)) return;
+            switch (skill.Slot)
             {
-                if (item.Kind == CombatEventKind.SelfHealed || item.Kind == CombatEventKind.PotionUsed)
-                {
-                    healFlashUntil = Time.unscaledTime + HealFlashSeconds;
-                }
+                case SkillSlot.Attack:
+                    // The blade's own trail draws these blows.
+                    break;
+                case SkillSlot.OptionA:
+                    Play(WaterForm.Surge, feet + new Vector2(facing * reach * 0.4f, 0.55f), new Vector2(reach + 0.6f, 0.8f), facing, 0.32f);
+                    break;
+                case SkillSlot.OptionB:
+                    float height = (float)skill.Hitbox.Height;
+                    if (drawnWater.Available)
+                    {
+                        // The screen jolts as the wave breaks.
+                        shakeAt = clock + drawnWater.PlayWave(feet, facing, height);
+                        break;
+                    }
+                    Play(WaterForm.Crest, feet + new Vector2(facing * reach * 0.5f, height * 0.52f), new Vector2(reach, height), facing, 0.52f);
+                    break;
+                case SkillSlot.Ultimate:
+                    bool final = combat.ActiveHitIndex == combat.ActiveHitCount - 1;
+                    Play(final ? WaterForm.Dragon : WaterForm.Spiral,
+                        feet + new Vector2(facing * reach * (final ? 0.48f : 0.38f), 0.85f),
+                        final ? new Vector2(reach * 1.1f, 1.7f) : new Vector2(1.8f + lastHitIndex * 0.4f, 1.5f + lastHitIndex * 0.3f),
+                        facing, final ? 0.55f : 0.34f, lastHitIndex, final ? 0f : lastHitIndex == 0 ? -25f : 20f);
+                    break;
             }
+        }
 
-            bool flashing = Time.unscaledTime < healFlashUntil;
-            healFlash.gameObject.SetActive(flashing);
+        /// <summary>Plays the blows the package covers; the wave and the shot keep their own art.</summary>
+        private bool PlayPackageSlash(CombatState combat, SkillConfig skill, Vector2 feet, int facing, float reach)
+        {
+            bool lastHit = combat.ActiveHitIndex == combat.ActiveHitCount - 1;
+            var front = feet + new Vector2(facing * reach * 0.35f, 0.6f);
 
-            if (flashing)
+            switch (skill.Slot)
             {
-                healFlash.position = new Vector3((float)movement.X, (float)movement.Y + HealFlashSize / 2f, 0f);
+                case SkillSlot.Attack:
+                    packageSlash.PlayComboSlash(front, facing, combat.ComboStep);
+                    return true;
+                case SkillSlot.OptionA:
+                    packageSlash.PlaySlash(front, facing, 0.8f, 90f);
+                    return true;
+                case SkillSlot.Ultimate:
+                    packageSlash.PlaySlash(front + Vector2.up * 0.25f, facing, lastHit ? 1.3f : 0.95f, 0f, combat.ActiveHitIndex == 1);
+                    return true;
+                default:
+                    return false;
             }
+        }
+
+        private void StartSpark(Simulation fight, BossConfig boss, in CombatEvent hit)
+        {
+            int way = fight.Boss.X >= fight.Player.X ? -1 : 1;
+            var place = new Vector2((float)fight.Boss.X + way * (float)boss.Width * 0.4f,
+                (float)boss.Height * 0.4f + hit.HitIndex % 2 * 0.15f);
+            bool heavy = hit.Slot == SkillSlot.Ultimate && hit.HitIndex == 2
+                || hit.Slot == SkillSlot.Attack && fight.Combat.ComboStep == 2;
+            if (packageSlash.Enabled)
+            {
+                packageSlash.PlayImpact(place, heavy ? 0.9f : 0.6f);
+                return;
+            }
+            Play(WaterForm.Impact, place, Vector2.one * (heavy ? 1.4f : 0.9f), fight.Player.Facing,
+                heavy ? 0.34f : 0.26f, hit.HitIndex);
+        }
+
+        private void Play(WaterForm form, Vector2 place, Vector2 size, int facing, float life, int variant = 0, float tilt = 0f)
+        {
+            WaterEffect effect = null;
+            foreach (var candidate in effects)
+                if (!candidate.Playing) { effect = candidate; break; }
+            if (effect == null && effects.Count < MaxEffects)
+            {
+                effect = new WaterEffect(); effects.Add(effect);
+            }
+            if (effect == null) effect = effects[replacement++ % MaxEffects];
+            effect.Start(form, place, size, facing, life, variant, tilt);
         }
     }
 }

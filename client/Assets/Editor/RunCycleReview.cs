@@ -7,6 +7,9 @@ namespace DaKiem.Client.Editor
 {
     public static class RunCycleReview
     {
+        private static readonly float PlantedAnkleHeight =
+            (CharacterRig.FeetY - CharacterRig.Find(CharacterRig.FootNear).JointY) / CharacterRigScale.LayoutPixelsPerUnit;
+
         public static void Run()
         {
             Review(4f, 0.24f, "run");
@@ -19,7 +22,9 @@ namespace DaKiem.Client.Editor
 
         private static void Review(float travelSpeed, float stance, string label)
         {
-            var view = new CharacterView();
+            // Stepped poses hold each foot still in the air of the moving body by design, so the
+            // feet are measured on the motion underneath them.
+            var view = new CharacterView { StepsPose = false };
             Transform root = GameObject.Find("Character").transform;
             Transform near = root.Find("Rig/hip/foot_near");
             Transform far = root.Find("Rig/hip/foot_far");
@@ -76,7 +81,7 @@ namespace DaKiem.Client.Editor
 
         private static void CheckContact(Vector3 foot, bool down, ref Vector3 previous, ref bool wasDown, ref int count, ref float worst)
         {
-            if (down && Mathf.Abs(foot.y - 73f / CharacterRigScale.LayoutPixelsPerUnit) > 0.001f)
+            if (down && Mathf.Abs(foot.y - PlantedAnkleHeight) > 0.001f)
                 throw new Exception("Planted ankle height changed: " + foot.y);
             if (down && wasDown)
             {

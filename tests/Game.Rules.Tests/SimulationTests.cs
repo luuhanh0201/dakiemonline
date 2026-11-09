@@ -66,6 +66,50 @@ namespace Game.Rules.Tests
         }
 
         [Fact]
+        public void HeldBoss_NeitherMovesNorAttacks()
+        {
+            Simulation fight = NewFight();
+            fight.BossHeld = true;
+            double startX = fight.Boss.X;
+            var walk = new MovementIntent(1d, 0d, false);
+
+            for (int tick = 0; tick < Ticks.FromSeconds(30d); tick++)
+            {
+                fight.Step(walk, default);
+            }
+
+            Assert.Equal(startX, fight.Boss.X);
+            Assert.Equal(BossPhase.Approach, fight.Boss.Phase);
+            Assert.Equal(0, fight.HitsTaken);
+            Assert.Equal(MatchResult.Playing, fight.Result);
+        }
+
+        [Fact]
+        public void HeldBoss_CanStillBeHitAndMovesAgainWhenReleased()
+        {
+            Simulation fight = NewFight();
+            fight.BossHeld = true;
+
+            while (fight.Boss.X - fight.Player.X > 1d)
+            {
+                fight.Step(new MovementIntent(1d, 0d, false), default);
+            }
+
+            int fullHp = fight.Boss.Hp;
+
+            for (int tick = 0; tick < Ticks.FromSeconds(1d); tick++)
+            {
+                fight.Step(default, new CombatIntent(tick == 0 ? SkillSlot.Attack : (SkillSlot?)null));
+            }
+
+            Assert.True(fight.Boss.Hp < fullHp);
+
+            fight.BossHeld = false;
+            fight.Step(default, default);
+            Assert.Equal(BossPhase.Warning, fight.Boss.Phase);
+        }
+
+        [Fact]
         public void Fight_StartsEightUnitsApartAndUndecided()
         {
             Simulation fight = NewFight();

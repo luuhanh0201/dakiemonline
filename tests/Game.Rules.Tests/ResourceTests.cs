@@ -240,18 +240,18 @@ namespace Game.Rules.Tests
         }
 
         [Fact]
-        public void Design_BasicAttackIsAboutOneHundredDamagePerSecond()
+        public void Design_BasicAttackIsAboutOneHundredThirtyThreeDamagePerSecond()
         {
             SkillConfig skill = Skill("thuy.danh_thuong");
             double cycle = skill.WindupSec + skill.ActivePhases.Sum(phase => phase.DurationSec) + skill.RecoverySec;
 
             double perSecond = SkillDamage.HitDamage(skill, 0, Character.Attack, 1, 0m) / cycle;
 
-            Assert.Equal(100d, perSecond, Precision);
+            Assert.Equal(60d / 0.45d, perSecond, Precision);
         }
 
         [Fact]
-        public void Design_FullComboIsAboutOneHundredTenDamagePerSecond()
+        public void Design_FullComboIsAboutOneHundredFortySevenDamagePerSecond()
         {
             SkillConfig skill = Skill("thuy.danh_thuong");
             double cycle = skill.WindupSec + skill.ActivePhases.Sum(phase => phase.DurationSec) + skill.RecoverySec;
@@ -259,7 +259,7 @@ namespace Game.Rules.Tests
 
             double damage = Enumerable.Range(0, hits).Sum(step => SkillDamage.HitDamage(skill, 0, Character.Attack, 1, 0m, step));
 
-            Assert.Equal(110d, damage / (cycle * hits), Precision);
+            Assert.Equal(198d / 1.35d, damage / (cycle * hits), Precision);
         }
 
         [Fact]

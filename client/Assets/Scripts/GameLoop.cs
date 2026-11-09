@@ -29,6 +29,13 @@ namespace DaKiem.Client
         private float accumulator;
         private float nextSystemBarCheck;
 
+#if UNITY_STANDALONE
+        // The PC build is for trying things out, so the boss starts held; F5 lets it fight.
+        private bool bossHeld = true;
+#else
+        private const bool bossHeld = false;
+#endif
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Create()
         {
@@ -72,7 +79,7 @@ namespace DaKiem.Client
 
         private void StartFight()
         {
-            fight = new Simulation(config, StartX);
+            fight = new Simulation(config, StartX) { BossHeld = bossHeld };
             previousFeet = currentFeet = ReadFeet();
             previousBossX = currentBossX = (float)fight.Boss.X;
             hud.HideEndScreen();
@@ -129,6 +136,8 @@ namespace DaKiem.Client
 #if UNITY_STANDALONE
             GearSlot? changed = input.ConsumeGearChange();
             if (changed.HasValue) character.WearNext(changed.Value);
+            if (input.ConsumeSlashStyleChange()) fx.ToggleSlashPackage();
+            if (input.ConsumeBossHoldChange()) fight.BossHeld = bossHeld = !bossHeld;
 #endif
             character.Show(
                 feet,
@@ -193,14 +202,17 @@ namespace DaKiem.Client
                 if (slot != null)
                 {
                     double left = combat.CooldownSecondsLeft(slot.Value);
-                    bool ready = Combat.IsSkillReady(combat, fight.Resources, config.Skill(slot.Value));
+                    SkillConfig skill = config.Skill(slot.Value);
+                    bool ready = Combat.IsSkillReady(combat, fight.Resources, skill);
                     hud.SetButton(spec.Button, left > 0d ? WholeSeconds(left) : spec.Label, !ready);
+                    hud.SetCooldown(spec.Button, skill.CooldownSec > 0d ? (float)(left / skill.CooldownSec) : 0f);
                 }
                 else if (spec.Button == HudButton.Potion)
                 {
                     double left = combat.PotionCooldownSecondsLeft;
                     string label = left > 0d ? WholeSeconds(left) : $"{spec.Label}\n{combat.PotionsLeft}";
                     hud.SetButton(spec.Button, label, !Combat.IsPotionReady(combat));
+                    hud.SetCooldown(spec.Button, (float)(left / config.Potion.CooldownSec));
                 }
             }
         }
@@ -223,16 +235,6 @@ namespace DaKiem.Client
                 GUI.Label(new Rect(0f, 0f, Screen.width, Screen.height), configError, style);
                 return;
             }
-
-            if (fight == null)
-            {
-                return;
-            }
-
-            MovementState player = fight.Player;
-            string text = $"x {player.X:0.00}  y {player.Y:0.00}  stamina {player.Stamina:0}";
-
-            GUI.Label(new Rect(Screen.width * 0.3f, Screen.height / 6f, Screen.width, Screen.height / 8f), text, style);
         }
 
         private Vector2 ReadFeet()

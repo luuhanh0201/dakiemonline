@@ -85,7 +85,7 @@ namespace Game.Rules.Tests
         }
 
         [Theory]
-        [InlineData(SkillSlot.Attack, 0.6d)]
+        [InlineData(SkillSlot.Attack, 0.45d)]
         [InlineData(SkillSlot.Ranged, 0.4d)]
         [InlineData(SkillSlot.Support, 0.5d)]
         [InlineData(SkillSlot.OptionA, 0.6d)]
@@ -208,7 +208,7 @@ namespace Game.Rules.Tests
             Fighter fighter = NewFighter();
 
             Cast(fighter, SkillSlot.Attack);
-            Wait(fighter, Ticks(0.6d) - 1 - 3);
+            Wait(fighter, Ticks(0.45d) - 1 - 3);
             Cast(fighter, SkillSlot.Ranged);
             Assert.Equal(SkillSlot.Attack, fighter.Combat.Casting!.Slot);
 
@@ -744,7 +744,7 @@ namespace Game.Rules.Tests
             Wait(fighter, 1, -RunTilt);
             Assert.Equal(-1, fighter.Movement.Facing);
 
-            Wait(fighter, Ticks(0.35d), -RunTilt);
+            Wait(fighter, Ticks(0.2d), -RunTilt);
             Tick(fighter, SkillSlot.Attack, moveX: -RunTilt, target: behind);
             Wait(fighter, Ticks(0.15d) + 1, -RunTilt, behind);
 
@@ -768,12 +768,12 @@ namespace Game.Rules.Tests
         {
             var fighter = new Fighter(config) { Movement = new MovementState(StartX, 0d, 50d) };
 
-            for (int tick = 0; tick < Ticks(0.6d); tick++)
+            for (int tick = 0; tick < Ticks(0.45d); tick++)
             {
                 Tick(fighter, tick == 0 ? SkillSlot.Attack : (SkillSlot?)null, moveX: RunTilt);
             }
 
-            Assert.Equal(53d, fighter.Movement.Stamina, Precision);
+            Assert.Equal(50d + 5d * Ticks(0.45d) * Game.Rules.Ticks.DeltaSeconds, fighter.Movement.Stamina, Precision);
         }
 
         [Fact]

@@ -38,6 +38,9 @@ namespace Game.Rules
         public double SecondsPlayed => TicksPlayed * Ticks.DeltaSeconds;
         public int PotionsUsed => config.Potion.Charges - Combat.PotionsLeft;
 
+        /// <summary>For trying skills: the boss neither moves nor attacks, but can still be hit.</summary>
+        public bool BossHeld { get; set; }
+
         /// <summary>The attack that ended a lost fight.</summary>
         public BossAttackConfig? KilledBy { get; private set; }
 
@@ -78,6 +81,11 @@ namespace Game.Rules
             if (Boss.IsDead)
             {
                 Result = MatchResult.Won;
+                return;
+            }
+
+            if (BossHeld)
+            {
                 return;
             }
 
