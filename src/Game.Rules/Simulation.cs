@@ -41,6 +41,9 @@ namespace Game.Rules
         /// <summary>For trying skills: the boss neither moves nor attacks, but can still be hit.</summary>
         public bool BossHeld { get; set; }
 
+        /// <summary>For trying skills: no cooldowns and energy always full. Potions are unchanged.</summary>
+        public bool FreeCasting { get; set; }
+
         /// <summary>The attack that ended a lost fight.</summary>
         public BossAttackConfig? KilledBy { get; private set; }
 
@@ -63,6 +66,16 @@ namespace Game.Rules
 
             TicksPlayed++;
             tickEvents.Clear();
+
+            if (FreeCasting)
+            {
+                foreach (SkillSlot slot in new List<SkillSlot>(Combat.CooldownTicks.Keys))
+                {
+                    Combat.CooldownTicks[slot] = 0;
+                }
+
+                Resources.Energy = config.Character.MaxEnergy;
+            }
 
             Game.Rules.Combat.Step(
                 Combat,

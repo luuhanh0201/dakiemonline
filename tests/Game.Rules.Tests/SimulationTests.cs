@@ -66,6 +66,30 @@ namespace Game.Rules.Tests
         }
 
         [Fact]
+        public void FreeCasting_CastsTheSameSkillAgainWithoutWaitingOrEnergy()
+        {
+            Simulation fight = NewFight();
+            fight.FreeCasting = true;
+            SkillConfig ultimate = config.Skill(SkillSlot.Ultimate);
+            int casts = 0;
+
+            for (int round = 0; round < 3; round++)
+            {
+                fight.Step(default, new CombatIntent(SkillSlot.Ultimate));
+                if (fight.Combat.Casting?.Slot == SkillSlot.Ultimate) casts++;
+
+                while (fight.Combat.Casting != null)
+                {
+                    fight.Step(default, default);
+                }
+            }
+
+            Assert.Equal(3, casts);
+            Assert.True(ultimate.CooldownSec > 10d);
+            Assert.Equal(config.Character.MaxEnergy, fight.Resources.Energy, 6);
+        }
+
+        [Fact]
         public void HeldBoss_NeitherMovesNorAttacks()
         {
             Simulation fight = NewFight();

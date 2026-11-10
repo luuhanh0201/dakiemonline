@@ -32,8 +32,12 @@ namespace DaKiem.Client
 #if UNITY_STANDALONE
         // The PC build is for trying things out, so the boss starts held; F5 lets it fight.
         private bool bossHeld = true;
+
+        // F6 lets every skill be cast again at once, for looking at effects.
+        private bool freeCasting;
 #else
         private const bool bossHeld = false;
+        private const bool freeCasting = false;
 #endif
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -79,7 +83,7 @@ namespace DaKiem.Client
 
         private void StartFight()
         {
-            fight = new Simulation(config, StartX) { BossHeld = bossHeld };
+            fight = new Simulation(config, StartX) { BossHeld = bossHeld, FreeCasting = freeCasting };
             previousFeet = currentFeet = ReadFeet();
             previousBossX = currentBossX = (float)fight.Boss.X;
             hud.HideEndScreen();
@@ -138,6 +142,7 @@ namespace DaKiem.Client
             if (changed.HasValue) character.WearNext(changed.Value);
             if (input.ConsumeSlashStyleChange()) fx.ToggleSlashPackage();
             if (input.ConsumeBossHoldChange()) fight.BossHeld = bossHeld = !bossHeld;
+            if (input.ConsumeFreeCastingChange()) fight.FreeCasting = freeCasting = !freeCasting;
 #endif
             character.Show(
                 feet,

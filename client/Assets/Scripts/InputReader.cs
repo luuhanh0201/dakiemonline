@@ -30,6 +30,7 @@ namespace DaKiem.Client
         private GearSlot? gearPressed;
         private bool slashStylePressed;
         private bool bossHoldPressed;
+        private bool freeCastingPressed;
 #endif
 
         public InputReader(HudView hud)
@@ -79,6 +80,14 @@ namespace DaKiem.Client
         }
 
 #if UNITY_STANDALONE
+        /// <summary>True once per press of F6, which turns cooldowns and energy costs off or on.</summary>
+        public bool ConsumeFreeCastingChange()
+        {
+            bool pressed = freeCastingPressed;
+            freeCastingPressed = false;
+            return pressed;
+        }
+
         /// <summary>True once per press of F5, which stops or restarts the boss for trying skills.</summary>
         public bool ConsumeBossHoldChange()
         {
@@ -183,6 +192,7 @@ namespace DaKiem.Client
             if (keys.f3Key.wasPressedThisFrame) gearPressed = GearSlot.Pants;
             slashStylePressed |= keys.f4Key.wasPressedThisFrame;
             bossHoldPressed |= keys.f5Key.wasPressedThisFrame;
+            freeCastingPressed |= keys.f6Key.wasPressedThisFrame;
 
             if (hud.EndScreenVisible)
             {

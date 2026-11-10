@@ -19,6 +19,7 @@ namespace DaKiem.Client
         private int lastHitIndex = -1, replacement;
         private float hurtFlashUntil, clock;
         private float shakeAt = -1f;
+        private bool gathering;
         private readonly WorldView world;
 
         public FxView(WorldView world)
@@ -64,11 +65,24 @@ namespace DaKiem.Client
                 shakeAt = -1f;
             }
             ShowBox(warningZone, BossAi.WarningZone(fight.Boss, boss));
-            ShowProjectiles(fight.Combat.Projectiles);
+            if (drawnWater.HasShots)
+            {
+                foreach (var effect in projectiles) effect.Hide();
+                int landed = 0;
+                foreach (CombatEvent item in fight.CombatEvents)
+                    if (item.Kind == CombatEventKind.SkillHit && item.Slot == SkillSlot.Ranged) landed++;
+                drawnWater.ShowShots(fight.Combat.Projectiles, landed, dt);
+            }
+            else
+            {
+                ShowProjectiles(fight.Combat.Projectiles);
+            }
             StartSlash(fight);
             foreach (CombatEvent item in fight.CombatEvents)
             {
                 if (item.Kind == CombatEventKind.SkillHit) StartSpark(fight, boss, item);
+                else if ((item.Kind == CombatEventKind.SelfHealed || item.Kind == CombatEventKind.PotionUsed) && drawnWater.HasHeal)
+                    drawnWater.PlayHeal(new Vector2((float)fight.Player.X, (float)fight.Player.Y));
                 else if (item.Kind == CombatEventKind.SelfHealed || item.Kind == CombatEventKind.PotionUsed)
                     Play(WaterForm.Heal, new Vector2((float)fight.Player.X, (float)fight.Player.Y + 0.5f),
                         new Vector2(1.3f, 1.2f), 1, 0.8f);
@@ -101,6 +115,7 @@ namespace DaKiem.Client
         private void StartSlash(Simulation fight)
         {
             CombatState combat = fight.Combat;
+            StartGather(fight);
             SkillConfig skill = combat.Phase == CastPhase.Active ? combat.Casting : null;
             if (skill == null) { lastSkill = null; lastHitIndex = -1; return; }
             if (skill == lastSkill && combat.ActiveHitIndex == lastHitIndex) return;
@@ -115,6 +130,11 @@ namespace DaKiem.Client
                     // The blade's own trail draws these blows.
                     break;
                 case SkillSlot.OptionA:
+                    if (drawnWater.HasDash)
+                    {
+                        drawnWater.PlayDash(feet, facing, reach);
+                        break;
+                    }
                     Play(WaterForm.Surge, feet + new Vector2(facing * reach * 0.4f, 0.55f), new Vector2(reach + 0.6f, 0.8f), facing, 0.32f);
                     break;
                 case SkillSlot.OptionB:
@@ -127,6 +147,11 @@ namespace DaKiem.Client
                     }
                     Play(WaterForm.Crest, feet + new Vector2(facing * reach * 0.5f, height * 0.52f), new Vector2(reach, height), facing, 0.52f);
                     break;
+                case SkillSlot.Ultimate when drawnWater.HasUltimate:
+                    // The blade trail draws the first two blows; the last raises the wall.
+                    if (combat.ActiveHitIndex == combat.ActiveHitCount - 1)
+                        shakeAt = clock + drawnWater.PlayWall(feet, facing, reach);
+                    break;
                 case SkillSlot.Ultimate:
                     bool final = combat.ActiveHitIndex == combat.ActiveHitCount - 1;
                     Play(final ? WaterForm.Dragon : WaterForm.Spiral,
@@ -135,6 +160,20 @@ namespace DaKiem.Client
                         facing, final ? 0.55f : 0.34f, lastHitIndex, final ? 0f : lastHitIndex == 0 ? -25f : 20f);
                     break;
             }
+        }
+
+        /// <summary>Water gathers at the feet from the windup of the ultimate until its last blow.</summary>
+        private void StartGather(Simulation fight)
+        {
+            SkillConfig skill = fight.Combat.Casting;
+            bool ultimate = skill != null && skill.Slot == SkillSlot.Ultimate;
+            if (!ultimate) { gathering = false; return; }
+            if (gathering || !drawnWater.HasUltimate || packageSlash.Enabled) return;
+            gathering = true;
+
+            double seconds = skill.WindupSec;
+            for (int i = 0; i < skill.ActivePhases.Count - 1; i++) seconds += skill.ActivePhases[i].DurationSec;
+            drawnWater.PlayGather(new Vector2((float)fight.Player.X, (float)fight.Player.Y), fight.Player.Facing, (float)seconds);
         }
 
         /// <summary>Plays the blows the package covers; the wave and the shot keep their own art.</summary>
@@ -169,6 +208,11 @@ namespace DaKiem.Client
             if (packageSlash.Enabled)
             {
                 packageSlash.PlayImpact(place, heavy ? 0.9f : 0.6f);
+                return;
+            }
+            if (drawnWater.HasHit)
+            {
+                drawnWater.PlayHit(place, fight.Player.Facing, heavy);
                 return;
             }
             Play(WaterForm.Impact, place, Vector2.one * (heavy ? 1.4f : 0.9f), fight.Player.Facing,
