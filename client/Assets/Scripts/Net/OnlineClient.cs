@@ -30,6 +30,8 @@ namespace DaKiem.Client.Net
         private readonly Stopwatch clock = Stopwatch.StartNew();
         private readonly Dictionary<int, RemoteTrack> tracks = new Dictionary<int, RemoteTrack>();
         private readonly List<int> present = new List<int>();
+        private readonly List<NetEvent> events = new List<NetEvent>();
+        private IReadOnlyList<RemoteProjectile> projectiles = Array.Empty<RemoteProjectile>();
         private INetTransport transport;
         private byte[] token = Array.Empty<byte>();
         private bool helloSent;
@@ -55,6 +57,22 @@ namespace DaKiem.Client.Net
 
         /// <summary>Players in the latest snapshot; tracks of anyone else are dropped.</summary>
         public IReadOnlyList<int> Present => present;
+
+        /// <summary>The server allows the refill button here.</summary>
+        public bool TestRoom { get; private set; }
+
+        /// <summary>The boss as of the latest snapshot.</summary>
+        public BossState Boss { get; private set; }
+
+        /// <summary>The boss's position over time, drawn slightly in the past like other players.</summary>
+        public RemoteTrack BossTrack { get; private set; } = new RemoteTrack();
+
+        /// <summary>Ticks until a beaten boss comes back; 0 while it is alive.</summary>
+        public int BossRespawnTicks { get; private set; }
+
+        /// <summary>Projectiles in flight from the latest snapshot, by owner.</summary>
+        public IReadOnlyList<RemoteProjectile> Projectiles => projectiles;
+
 
         public LatencyStats Latency { get; } = new LatencyStats();
         public double LastRoundTripMs { get; private set; }
@@ -101,14 +119,14 @@ namespace DaKiem.Client.Net
         }
 
         /// <summary>One game tick of input: predicted at once and sent to the server.</summary>
-        public void Tick(double moveX, double moveY, bool dash)
+        public void Tick(double moveX, double moveY, bool dash, in CombatIntent combat, bool refill)
         {
             if (Status != OnlineStatus.Playing)
             {
                 return;
             }
 
-            InputMessage input = Predictor.Advance(moveX, moveY, dash);
+            InputMessage input = Predictor.Advance(moveX, moveY, dash, combat.SkillPressed, combat.PotionPressed, refill);
             transport.Send(Packet.Encode(input));
         }
 
@@ -180,7 +198,10 @@ namespace DaKiem.Client.Net
             token = welcome.Token;
             PlayerId = welcome.PlayerId;
             ChannelId = welcome.ChannelId;
-            Predictor = new Predictor(config, welcome.Self, welcome.LastInputSequence);
+            TestRoom = welcome.TestRoom;
+            Predictor = new Predictor(config, welcome.Self, welcome.LastInputSequence, welcome.TestRoom) { Boss = Boss };
+            BossTrack = new RemoteTrack();
+            events.Clear();
             tracks.Clear();
             present.Clear();
             ServerClock.Observe(welcome.ServerTick);
@@ -193,7 +214,10 @@ namespace DaKiem.Client.Net
         private void OnSnapshot(SnapshotMessage snapshot)
         {
             ServerClock.Observe(snapshot.ServerTick);
+            UpdateBoss(snapshot);
             Predictor.Reconcile(snapshot.AckSequence, snapshot.Self);
+            projectiles = snapshot.Projectiles;
+            events.AddRange(snapshot.Events);
 
             present.Clear();
 
@@ -226,6 +250,33 @@ namespace DaKiem.Client.Net
                     tracks.Remove(id);
                 }
             }
+        }
+
+        /// <summary>Hands over the room's events since the last call, so each is shown once.</summary>
+        public List<NetEvent> DrainEvents(List<NetEvent> into)
+        {
+            into.Clear();
+            into.AddRange(events);
+            events.Clear();
+            return into;
+        }
+
+        private void UpdateBoss(SnapshotMessage snapshot)
+        {
+            if (Boss == null)
+            {
+                Boss = BossState.FromSnapshot(config.Boss, snapshot.Boss);
+            }
+            else
+            {
+                Boss.Restore(snapshot.Boss);
+            }
+
+            Predictor.Boss = Boss;
+            BossRespawnTicks = snapshot.BossRespawnTicks;
+            BossTrack.Add(
+                snapshot.ServerTick,
+                new RemotePlayer(0, (float)snapshot.Boss.X, 0f, (sbyte)snapshot.Boss.Facing, RemoteFlags.Grounded));
         }
 
         private void Dropped(string reason)

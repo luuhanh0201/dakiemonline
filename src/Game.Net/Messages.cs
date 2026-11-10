@@ -65,7 +65,8 @@ namespace Game.Net
             bool resumed,
             byte[] token,
             uint lastInputSequence,
-            MovementSnapshot self)
+            bool testRoom,
+            PlayerSnapshot self)
         {
             PlayerId = playerId;
             ChannelId = channelId;
@@ -73,6 +74,7 @@ namespace Game.Net
             Resumed = resumed;
             Token = token;
             LastInputSequence = lastInputSequence;
+            TestRoom = testRoom;
             Self = self;
         }
 
@@ -86,7 +88,10 @@ namespace Game.Net
         /// <summary>The last input the server used, so a resumed client numbers on from it.</summary>
         public uint LastInputSequence { get; }
 
-        public MovementSnapshot Self { get; }
+        /// <summary>The room allows the refill button; the client shows it only then.</summary>
+        public bool TestRoom { get; }
+
+        public PlayerSnapshot Self { get; }
 
         internal override void Write(PacketWriter writer)
         {
@@ -96,6 +101,7 @@ namespace Game.Net
             writer.Bool(Resumed);
             writer.Bytes(Token);
             writer.UInt32(LastInputSequence);
+            writer.Bool(TestRoom);
             SnapshotCodec.Write(writer, Self);
         }
 
@@ -108,7 +114,8 @@ namespace Game.Net
                 reader.Bool(),
                 reader.Bytes(),
                 reader.UInt32(),
-                SnapshotCodec.Read(ref reader));
+                reader.Bool(),
+                SnapshotCodec.ReadPlayer(ref reader));
         }
     }
 
@@ -147,8 +154,11 @@ namespace Game.Net
     public sealed class InputMessage : NetMessage
     {
         private const double Steps = 127d;
+        private const byte DashFlag = 1;
+        private const byte PotionFlag = 2;
+        private const byte RefillFlag = 4;
 
-        public InputMessage(uint sequence, sbyte moveX, sbyte moveY, bool dash)
+        public InputMessage(uint sequence, sbyte moveX, sbyte moveY, bool dash, SkillSlot? skill = null, bool potion = false, bool refill = false)
         {
             if (moveX == sbyte.MinValue || moveY == sbyte.MinValue)
             {
@@ -159,6 +169,9 @@ namespace Game.Net
             MoveX = moveX;
             MoveY = moveY;
             Dash = dash;
+            Skill = skill;
+            Potion = potion;
+            Refill = refill;
         }
 
         public override MessageType Type => MessageType.Input;
@@ -166,25 +179,62 @@ namespace Game.Net
         public sbyte MoveX { get; }
         public sbyte MoveY { get; }
         public bool Dash { get; }
+        public SkillSlot? Skill { get; }
+        public bool Potion { get; }
 
-        public static InputMessage FromJoystick(uint sequence, double moveX, double moveY, bool dash)
+        /// <summary>The test room's refill button.</summary>
+        public bool Refill { get; }
+
+        public static InputMessage FromJoystick(
+            uint sequence,
+            double moveX,
+            double moveY,
+            bool dash,
+            SkillSlot? skill = null,
+            bool potion = false,
+            bool refill = false)
         {
-            return new InputMessage(sequence, Quantize(moveX), Quantize(moveY), dash);
+            return new InputMessage(sequence, Quantize(moveX), Quantize(moveY), dash, skill, potion, refill);
         }
 
-        public MovementIntent ToIntent() => new MovementIntent(MoveX / Steps, MoveY / Steps, Dash);
+        public RoomIntent ToIntent()
+        {
+            return new RoomIntent(
+                new MovementIntent(MoveX / Steps, MoveY / Steps, Dash),
+                new CombatIntent(Skill, Potion),
+                Refill);
+        }
 
         internal override void Write(PacketWriter writer)
         {
             writer.UInt32(Sequence);
             writer.SByte(MoveX);
             writer.SByte(MoveY);
-            writer.Bool(Dash);
+            writer.Byte((byte)((Dash ? DashFlag : 0) | (Potion ? PotionFlag : 0) | (Refill ? RefillFlag : 0)));
+            SnapshotCodec.WriteSlot(writer, Skill);
         }
 
         internal static InputMessage Read(ref PacketReader reader)
         {
-            return new InputMessage(reader.UInt32(), reader.SByte(), reader.SByte(), reader.Bool());
+            uint sequence = reader.UInt32();
+            sbyte moveX = reader.SByte();
+            sbyte moveY = reader.SByte();
+            byte flags = reader.Byte();
+
+            if ((flags & ~(DashFlag | PotionFlag | RefillFlag)) != 0)
+            {
+                throw new ProtocolException($"unknown input flags {flags}");
+            }
+
+            SkillSlot? skill = SnapshotCodec.ReadSlot(ref reader);
+            return new InputMessage(
+                sequence,
+                moveX,
+                moveY,
+                (flags & DashFlag) != 0,
+                skill,
+                (flags & PotionFlag) != 0,
+                (flags & RefillFlag) != 0);
         }
 
         private static sbyte Quantize(double value)
@@ -203,18 +253,34 @@ namespace Game.Net
 
         /// <summary>Connection lost; the server is holding the place for a reconnect.</summary>
         Away = 4,
+
+        /// <summary>Waiting to come back at the spawn point.</summary>
+        Dead = 8,
     }
 
-    /// <summary>What a client needs to draw another player.</summary>
+    /// <summary>What a client needs to draw another player, including the skill they are casting.</summary>
     public readonly struct RemotePlayer
     {
-        public RemotePlayer(int id, float x, float y, sbyte facing, RemoteFlags flags)
+        public RemotePlayer(
+            int id,
+            float x,
+            float y,
+            sbyte facing,
+            RemoteFlags flags,
+            SkillSlot? casting = null,
+            int castTicks = 0,
+            int comboStep = 0,
+            sbyte castDirection = 1)
         {
             Id = id;
             X = x;
             Y = y;
             Facing = facing;
             Flags = flags;
+            Casting = casting;
+            CastTicks = castTicks;
+            ComboStep = comboStep;
+            CastDirection = castDirection;
         }
 
         public int Id { get; }
@@ -222,22 +288,141 @@ namespace Game.Net
         public float Y { get; }
         public sbyte Facing { get; }
         public RemoteFlags Flags { get; }
+        public SkillSlot? Casting { get; }
+
+        /// <summary>Ticks since the cast began, so the drawing can be rebuilt from the skill.</summary>
+        public int CastTicks { get; }
+
+        public int ComboStep { get; }
+        public sbyte CastDirection { get; }
     }
 
-    /// <summary>Server → client. Self is exact, for prediction; others are rounded, for drawing.</summary>
+    /// <summary>A projectile anyone in the room fired, for drawing.</summary>
+    public readonly struct RemoteProjectile
+    {
+        public RemoteProjectile(int ownerId, SkillSlot slot, float x, float y, sbyte direction)
+        {
+            OwnerId = ownerId;
+            Slot = slot;
+            X = x;
+            Y = y;
+            Direction = direction;
+        }
+
+        public int OwnerId { get; }
+        public SkillSlot Slot { get; }
+        public float X { get; }
+        public float Y { get; }
+        public sbyte Direction { get; }
+    }
+
+    /// <summary>
+    /// A <see cref="RoomEvent"/> on the wire. A boss attack travels as its place in the boss's cycle,
+    /// so the client finds the attack in its own config.
+    /// </summary>
+    public readonly struct NetEvent
+    {
+        public NetEvent(
+            RoomEventKind kind,
+            int playerId,
+            CombatEventKind combatKind = default,
+            SkillSlot? slot = null,
+            int amount = 0,
+            int hitIndex = 0,
+            BossEventKind bossKind = default,
+            int bossAttack = 0)
+        {
+            Kind = kind;
+            PlayerId = playerId;
+            CombatKind = combatKind;
+            Slot = slot;
+            Amount = amount;
+            HitIndex = hitIndex;
+            BossKind = bossKind;
+            BossAttack = bossAttack;
+        }
+
+        public RoomEventKind Kind { get; }
+        public int PlayerId { get; }
+        public CombatEventKind CombatKind { get; }
+        public SkillSlot? Slot { get; }
+
+        /// <summary>Damage dealt or health restored; for a boss hit, the damage taken.</summary>
+        public int Amount { get; }
+
+        public int HitIndex { get; }
+        public BossEventKind BossKind { get; }
+
+        /// <summary>Index into the boss's cycle of the attack that warned or hit.</summary>
+        public int BossAttack { get; }
+
+        public static NetEvent From(in RoomEvent item, BossConfig boss)
+        {
+            switch (item.Kind)
+            {
+                case RoomEventKind.Combat:
+                    CombatEvent combat = item.Combat;
+                    return new NetEvent(item.Kind, item.PlayerId, combat.Kind, combat.Slot, combat.Amount, combat.HitIndex);
+                case RoomEventKind.Boss:
+                    BossEvent hit = item.Boss;
+                    int attack = 0;
+
+                    for (int index = 0; index < boss.Cycle.Count; index++)
+                    {
+                        if (boss.Cycle[index] == hit.Attack)
+                        {
+                            attack = index;
+                            break;
+                        }
+                    }
+
+                    return new NetEvent(item.Kind, item.PlayerId, amount: hit.Damage, bossKind: hit.Kind, bossAttack: attack);
+                default:
+                    return new NetEvent(item.Kind, item.PlayerId);
+            }
+        }
+
+        public CombatEvent ToCombatEvent(GameConfig config)
+        {
+            SkillSlow? slow = Slot == null ? null : config.Skill(Slot.Value).Slow;
+            return new CombatEvent(CombatKind, Slot, Amount, CombatKind == CombatEventKind.SkillHit ? slow : null, HitIndex);
+        }
+
+        public BossEvent ToBossEvent(BossConfig boss)
+        {
+            return new BossEvent(BossKind, boss.Cycle[Math.Min(BossAttack, boss.Cycle.Count - 1)], Amount, PlayerId);
+        }
+    }
+
+    /// <summary>
+    /// Server → client. Self is exact, for prediction; others are rounded, for drawing. Events are
+    /// everything that happened in the room since the previous snapshot.
+    /// </summary>
     public sealed class SnapshotMessage : NetMessage
     {
-        public SnapshotMessage(uint serverTick, uint ackSequence, MovementSnapshot self, IReadOnlyList<RemotePlayer> others)
+        public SnapshotMessage(
+            uint serverTick,
+            uint ackSequence,
+            PlayerSnapshot self,
+            BossSnapshot boss,
+            int bossRespawnTicks,
+            IReadOnlyList<RemotePlayer> others,
+            IReadOnlyList<RemoteProjectile> projectiles,
+            IReadOnlyList<NetEvent> events)
         {
-            if (others.Count > byte.MaxValue)
+            if (others.Count > byte.MaxValue || projectiles.Count > byte.MaxValue || events.Count > byte.MaxValue)
             {
-                throw new ArgumentException("at most 255 other players", nameof(others));
+                throw new ArgumentException("at most 255 players, projectiles and events");
             }
 
             ServerTick = serverTick;
             AckSequence = ackSequence;
             Self = self;
+            Boss = boss;
+            BossRespawnTicks = bossRespawnTicks;
             Others = others;
+            Projectiles = projectiles;
+            Events = events;
         }
 
         public override MessageType Type => MessageType.Snapshot;
@@ -246,14 +431,20 @@ namespace Game.Net
         /// <summary>The last input applied before <see cref="Self"/> was taken.</summary>
         public uint AckSequence { get; }
 
-        public MovementSnapshot Self { get; }
+        public PlayerSnapshot Self { get; }
+        public BossSnapshot Boss { get; }
+        public int BossRespawnTicks { get; }
         public IReadOnlyList<RemotePlayer> Others { get; }
+        public IReadOnlyList<RemoteProjectile> Projectiles { get; }
+        public IReadOnlyList<NetEvent> Events { get; }
 
         internal override void Write(PacketWriter writer)
         {
             writer.UInt32(ServerTick);
             writer.UInt32(AckSequence);
             SnapshotCodec.Write(writer, Self);
+            SnapshotCodec.Write(writer, Boss);
+            writer.UInt16(checked((ushort)BossRespawnTicks));
             writer.Byte((byte)Others.Count);
 
             foreach (RemotePlayer other in Others)
@@ -263,6 +454,35 @@ namespace Game.Net
                 writer.Single(other.Y);
                 writer.SByte(other.Facing);
                 writer.Byte((byte)other.Flags);
+                SnapshotCodec.WriteSlot(writer, other.Casting);
+                writer.UInt16(checked((ushort)other.CastTicks));
+                writer.Byte(checked((byte)other.ComboStep));
+                writer.SByte(other.CastDirection);
+            }
+
+            writer.Byte((byte)Projectiles.Count);
+
+            foreach (RemoteProjectile shot in Projectiles)
+            {
+                writer.Int32(shot.OwnerId);
+                SnapshotCodec.WriteSlot(writer, shot.Slot);
+                writer.Single(shot.X);
+                writer.Single(shot.Y);
+                writer.SByte(shot.Direction);
+            }
+
+            writer.Byte((byte)Events.Count);
+
+            foreach (NetEvent item in Events)
+            {
+                writer.Byte((byte)item.Kind);
+                writer.Int32(item.PlayerId);
+                writer.Byte((byte)item.CombatKind);
+                SnapshotCodec.WriteSlot(writer, item.Slot);
+                writer.Int32(item.Amount);
+                writer.Byte(checked((byte)item.HitIndex));
+                writer.Byte((byte)item.BossKind);
+                writer.Byte(checked((byte)item.BossAttack));
             }
         }
 
@@ -270,11 +490,12 @@ namespace Game.Net
         {
             uint tick = reader.UInt32();
             uint ack = reader.UInt32();
-            MovementSnapshot self = SnapshotCodec.Read(ref reader);
-            int count = reader.Byte();
-            var others = new RemotePlayer[count];
+            PlayerSnapshot self = SnapshotCodec.ReadPlayer(ref reader);
+            BossSnapshot boss = SnapshotCodec.ReadBoss(ref reader);
+            int bossRespawn = reader.UInt16();
+            var others = new RemotePlayer[reader.Byte()];
 
-            for (int index = 0; index < count; index++)
+            for (int index = 0; index < others.Length; index++)
             {
                 int id = reader.Int32();
                 float x = reader.Single();
@@ -282,20 +503,55 @@ namespace Game.Net
                 sbyte facing = Facing(reader.SByte());
                 byte flags = reader.Byte();
 
-                if ((flags & ~(byte)(RemoteFlags.Grounded | RemoteFlags.Dashing | RemoteFlags.Away)) != 0)
+                if ((flags & ~(byte)(RemoteFlags.Grounded | RemoteFlags.Dashing | RemoteFlags.Away | RemoteFlags.Dead)) != 0)
                 {
                     throw new ProtocolException($"unknown player flags {flags}");
                 }
 
-                others[index] = new RemotePlayer(id, x, y, facing, (RemoteFlags)flags);
+                SkillSlot? casting = SnapshotCodec.ReadSlot(ref reader);
+                int castTicks = reader.UInt16();
+                int combo = reader.Byte();
+                sbyte direction = Facing(reader.SByte());
+                others[index] = new RemotePlayer(id, x, y, facing, (RemoteFlags)flags, casting, castTicks, combo, direction);
             }
 
-            return new SnapshotMessage(tick, ack, self, others);
+            var projectiles = new RemoteProjectile[reader.Byte()];
+
+            for (int index = 0; index < projectiles.Length; index++)
+            {
+                int owner = reader.Int32();
+                SkillSlot slot = SnapshotCodec.ReadSlot(ref reader) ?? throw new ProtocolException("projectile without a skill");
+                projectiles[index] = new RemoteProjectile(owner, slot, reader.Single(), reader.Single(), Facing(reader.SByte()));
+            }
+
+            var events = new NetEvent[reader.Byte()];
+
+            for (int index = 0; index < events.Length; index++)
+            {
+                RoomEventKind kind = Known<RoomEventKind>(reader.Byte());
+                int player = reader.Int32();
+                CombatEventKind combatKind = Known<CombatEventKind>(reader.Byte());
+                SkillSlot? slot = SnapshotCodec.ReadSlot(ref reader);
+                int amount = reader.Int32();
+                int hitIndex = reader.Byte();
+                BossEventKind bossKind = Known<BossEventKind>(reader.Byte());
+                events[index] = new NetEvent(kind, player, combatKind, slot, amount, hitIndex, bossKind, reader.Byte());
+            }
+
+            return new SnapshotMessage(tick, ack, self, boss, bossRespawn, others, projectiles, events);
         }
 
         internal static sbyte Facing(sbyte value)
         {
             return value == 1 || value == -1 ? value : throw new ProtocolException($"facing must be 1 or -1, got {value}");
+        }
+
+        internal static T Known<T>(byte value)
+            where T : struct, Enum
+        {
+            return Enum.IsDefined(typeof(T), (int)value)
+                ? (T)Enum.ToObject(typeof(T), value)
+                : throw new ProtocolException($"unknown {typeof(T).Name} {value}");
         }
     }
 

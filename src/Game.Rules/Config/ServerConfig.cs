@@ -15,5 +15,14 @@ namespace Game.Rules
 
         /// <summary>Inputs beyond this many waiting are dropped, oldest first, so lag cannot pile up.</summary>
         public int MaxQueuedInputs { get; set; }
+
+        /// <summary>A dead player comes back at the spawn point after this long.</summary>
+        public double PlayerRespawnSec { get; set; }
+
+        /// <summary>A beaten boss comes back with full health after this long.</summary>
+        public double BossRespawnSec { get; set; }
+
+        /// <summary>The test room allows the refill button; real play never does.</summary>
+        public bool TestRoom { get; set; }
     }
 }

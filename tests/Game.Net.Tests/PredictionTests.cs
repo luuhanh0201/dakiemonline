@@ -6,54 +6,62 @@ public class PredictionTests
 {
     private const int Precision = 9;
 
-    private readonly GameConfig config = TestConfig.Load();
+    // The boss waits far off, so every difference would come from the prediction itself.
+    private readonly GameConfig config = TestConfig.Load(("\"startDistance\": 8", "\"startDistance\": 24"), ("\"moveSpeed\": 1.5", "\"moveSpeed\": 0.0001"));
 
-    private static (double X, double Y, bool Dash) Stick(int tick)
+    /// <summary>Running, a jump, every skill, a dash and a potion, over and over.</summary>
+    private static (double X, double Y, bool Dash, SkillSlot? Skill, bool Potion) Stick(int tick)
     {
-        return (tick % 40) switch
+        return (tick % 60) switch
         {
-            < 15 => (1d, 0d, false),
-            15 => (1d, 1d, false),
-            < 25 => (0.3d, 0d, false),
-            25 => (-1d, 0d, true),
-            _ => (-0.8d, 0d, false),
+            < 10 => (1d, 0d, false, null, false),
+            10 => (0d, 0d, false, SkillSlot.Attack, false),
+            15 => (1d, 1d, false, null, false),
+            22 => (0d, 0d, false, SkillSlot.Ranged, false),
+            30 => (-1d, 0d, true, null, false),
+            38 => (0d, 0d, false, SkillSlot.OptionA, false),
+            46 => (0d, 0d, false, (SkillSlot)(tick / 60 % 6), true),
+            < 52 => (0.3d, 0d, false, null, false),
+            _ => (-0.8d, 0d, false, null, false),
         };
     }
 
-    /// <summary>A server that applies each input in order, as <see cref="Game.Server.ChannelRunner"/> does.</summary>
+    /// <summary>A server room that applies each input in order, as <see cref="Game.Server.ChannelRunner"/> does.</summary>
     private sealed class FakeServer
     {
-        private readonly Channel channel;
+        private readonly Room room;
 
         public FakeServer(GameConfig config)
         {
-            channel = new Channel(1, config, 20);
-            channel.Join(1, 5d);
+            room = new Room(1, config, TestConfig.Server());
+            room.Join(1);
         }
 
         public uint Ack { get; private set; }
-        public MovementSnapshot State => channel.Find(1)!.Movement.Capture();
-        public MovementSnapshot Start => State;
+        public PlayerSnapshot State => room.Find(1)!.Capture();
+        public BossState Boss => room.Boss;
 
         public void Apply(InputMessage input)
         {
-            channel.Step(new Dictionary<int, MovementIntent> { [1] = input.ToIntent() });
+            room.Step(new Dictionary<int, RoomIntent> { [1] = input.ToIntent() });
             Ack = input.Sequence;
         }
     }
 
     [Fact]
-    public void PredictionMatchesTheServerWithLag()
+    public void PredictionMatchesTheServerWithLagThroughEverySkill()
     {
         var server = new FakeServer(config);
-        var predictor = new Predictor(config, server.Start, 0u);
+        var predictor = new Predictor(config, server.State, 0u, testRoom: true);
         var inFlight = new Queue<InputMessage>();
         const int LagTicks = 6;
+        int casts = 0;
 
-        for (int tick = 0; tick < 200; tick++)
+        for (int tick = 0; tick < 400; tick++)
         {
-            (double x, double y, bool dash) = Stick(tick);
-            inFlight.Enqueue(predictor.Advance(x, y, dash));
+            (double x, double y, bool dash, SkillSlot? skill, bool potion) = Stick(tick);
+            inFlight.Enqueue(predictor.Advance(x, y, dash, skill, potion));
+            casts += predictor.PredictedEvents.Count(item => item.Kind == CombatEventKind.SkillStarted);
 
             if (inFlight.Count > LagTicks)
             {
@@ -62,21 +70,25 @@ public class PredictionTests
 
             if (tick % 2 == 0 && tick > LagTicks)
             {
-                MovementSnapshot before = predictor.State.Capture();
+                PlayerSnapshot before = Capture(predictor);
+                predictor.Boss = BossState.FromSnapshot(config.Boss, server.Boss.Capture());
                 predictor.Reconcile(server.Ack, server.State);
 
-                Assert.Equal(before, predictor.State.Capture());
+                Assert.Equal(Describe(before), Describe(Capture(predictor)));
+                Assert.Equal(before, Capture(predictor));
                 Assert.Equal(0d, predictor.LastCorrection);
                 Assert.Equal(LagTicks, predictor.PendingCount);
             }
         }
+
+        Assert.True(casts >= 12, $"{casts} skills were cast");
     }
 
     [Fact]
     public void ServerDisagreementIsCorrectedAndReplayed()
     {
         var server = new FakeServer(config);
-        var predictor = new Predictor(config, server.Start, 0u);
+        var predictor = new Predictor(config, server.State, 0u, testRoom: true);
         var sent = new List<InputMessage>();
 
         for (int tick = 0; tick < 10; tick++)
@@ -92,16 +104,38 @@ public class PredictionTests
 
         predictor.Reconcile(server.Ack, server.State);
 
-        double expected = server.State.X + 4 * config.Movement.RunSpeed * Ticks.DeltaSeconds;
-        Assert.Equal(expected, predictor.State.X, Precision);
+        double expected = server.State.Movement.X + 4 * config.Movement.RunSpeed * Ticks.DeltaSeconds;
+        Assert.Equal(expected, predictor.Movement.X, Precision);
         Assert.Equal(3 * config.Movement.RunSpeed * Ticks.DeltaSeconds, predictor.LastCorrection, Precision);
         Assert.Equal(4, predictor.PendingCount);
     }
 
     [Fact]
+    public void HealthComesOnlyFromTheServer()
+    {
+        var server = new FakeServer(config);
+        var predictor = new Predictor(config, server.State, 0u, testRoom: true);
+        PlayerSnapshot state = server.State;
+        var hurt = new PlayerSnapshot(state.Movement, state.Combat, new ResourceSnapshot(400, state.Resources.Energy), 0);
+
+        predictor.Reconcile(0u, hurt);
+
+        Assert.Equal(400, predictor.Resources.Hp);
+    }
+
+    [Fact]
+    public void RefillIsNotSentOutsideATestRoom()
+    {
+        var server = new FakeServer(config);
+
+        Assert.True(new Predictor(config, server.State, 0u, testRoom: true).Advance(0d, 0d, false, refill: true).Refill);
+        Assert.False(new Predictor(config, server.State, 0u, testRoom: false).Advance(0d, 0d, false, refill: true).Refill);
+    }
+
+    [Fact]
     public void ResumedPredictorNumbersOnFromTheServer()
     {
-        var predictor = new Predictor(config, new FakeServer(config).Start, 500u);
+        var predictor = new Predictor(config, new FakeServer(config).State, 500u, testRoom: true);
 
         Assert.Equal(501u, predictor.Advance(0d, 0d, false).Sequence);
     }
@@ -109,7 +143,7 @@ public class PredictionTests
     [Fact]
     public void PendingInputsAreCapped()
     {
-        var predictor = new Predictor(config, new FakeServer(config).Start, 0u);
+        var predictor = new Predictor(config, new FakeServer(config).State, 0u, testRoom: true);
 
         for (int tick = 0; tick < Predictor.MaxPending + 30; tick++)
         {
@@ -128,5 +162,23 @@ public class PredictionTests
     public void SequenceComparisonWraps(uint sequence, uint reference, bool after)
     {
         Assert.Equal(after, Predictor.IsAfter(sequence, reference));
+    }
+
+    private static string Describe(PlayerSnapshot s)
+    {
+        MovementSnapshot m = s.Movement;
+        CombatSnapshot c = s.Combat;
+        return $"tick m x={m.X:R} y={m.Y:R} vy={m.VelocityY:R} f={m.Facing} g={m.Grounded} st={m.Stamina:R} pmy={m.PreviousMoveY} jb={m.JumpBufferTicks} db={m.DashBufferTicks} co={m.CoyoteTicks} dt={m.DashTicksLeft} dd={m.DashDirection} ad={m.AirDashesUsed} sd={m.StaminaDelayTicks} | "
+            + $"c cast={c.Casting} ct={c.CastTicks} combo={c.ComboStep} dir={c.Direction} ox={c.OriginX:R} lhp={c.LastHitPhase} pot={c.PotionsLeft} cd={string.Join(',', c.Cooldowns)} buf={c.BufferedSkill} sb={c.SkillBufferTicks} pb={c.PotionBufferTicks} pc={c.PotionCooldownTicks} cw={c.ComboWindowTicks} proj={c.Projectiles.Count} | "
+            + $"r hp={s.Resources.Hp} en={s.Resources.Energy:R} resp={s.RespawnTicksLeft}";
+    }
+
+    private static PlayerSnapshot Capture(Predictor predictor)
+    {
+        return new PlayerSnapshot(
+            predictor.Movement.Capture(),
+            predictor.Combat.Capture(),
+            predictor.Resources.Capture(),
+            predictor.RespawnTicksLeft);
     }
 }

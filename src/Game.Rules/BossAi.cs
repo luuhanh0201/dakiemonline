@@ -19,16 +19,35 @@ namespace Game.Rules
 
     public readonly struct BossEvent
     {
-        public BossEvent(BossEventKind kind, BossAttackConfig attack, int damage = 0)
+        public BossEvent(BossEventKind kind, BossAttackConfig attack, int damage = 0, int playerId = 0)
         {
             Kind = kind;
             Attack = attack;
             Damage = damage;
+            PlayerId = playerId;
         }
 
         public BossEventKind Kind { get; }
         public BossAttackConfig Attack { get; }
         public int Damage { get; }
+
+        /// <summary>Who was hit, for <see cref="BossEventKind.PlayerHit"/>. A single-player fight uses 0.</summary>
+        public int PlayerId { get; }
+    }
+
+    /// <summary>A player the boss can chase and hit.</summary>
+    public readonly struct BossTarget
+    {
+        public BossTarget(int playerId, MovementState movement, ResourceState resources)
+        {
+            PlayerId = playerId;
+            Movement = movement;
+            Resources = resources;
+        }
+
+        public int PlayerId { get; }
+        public MovementState Movement { get; }
+        public ResourceState Resources { get; }
     }
 
     public sealed class BossState
@@ -51,9 +70,38 @@ namespace Game.Rules
         internal int CycleIndex { get; set; }
         internal int PhaseTicksLeft { get; set; }
         internal double LockedX { get; set; }
-        internal bool PlayerWasHit { get; set; }
+
+        /// <summary>Players the current attack already hit; each is hit at most once per attack.</summary>
+        internal HashSet<int> PlayersHit { get; } = new HashSet<int>();
+
         internal int SlowTicksLeft { get; set; }
         internal double SlowPercent { get; set; }
+
+        public static BossState FromSnapshot(BossConfig config, in BossSnapshot snapshot)
+        {
+            var boss = new BossState(config, snapshot.X);
+            boss.Restore(snapshot);
+            return boss;
+        }
+
+        public BossSnapshot Capture()
+        {
+            return new BossSnapshot(Hp, X, Facing, Phase, CycleIndex, PhaseTicksLeft, LockedX, SlowTicksLeft, SlowPercent);
+        }
+
+        /// <summary>Puts the boss back as captured. Who the current attack already hit is not carried.</summary>
+        public void Restore(in BossSnapshot snapshot)
+        {
+            Hp = snapshot.Hp;
+            X = snapshot.X;
+            Facing = snapshot.Facing;
+            Phase = snapshot.Phase;
+            CycleIndex = snapshot.CycleIndex;
+            PhaseTicksLeft = snapshot.PhaseTicksLeft;
+            LockedX = snapshot.LockedX;
+            SlowTicksLeft = snapshot.SlowTicksLeft;
+            SlowPercent = snapshot.SlowPercent;
+        }
     }
 
     public static class BossAi
@@ -115,6 +163,7 @@ namespace Game.Rules
             }
         }
 
+        /// <summary>One tick against a single player, as in the offline fight.</summary>
         public static void Step(
             BossState boss,
             MovementState player,
@@ -123,7 +172,24 @@ namespace Game.Rules
             CollisionMap map,
             List<BossEvent> events)
         {
-            if (boss.IsDead || resources.IsDead)
+            Step(boss, new[] { new BossTarget(0, player, resources) }, config, map, events);
+        }
+
+        /// <summary>
+        /// One tick against several players. The boss chases the nearest living player and aims
+        /// each new attack at them; an attack hits every living player inside it, once each.
+        /// With nobody alive it waits where it is.
+        /// </summary>
+        public static void Step(
+            BossState boss,
+            IReadOnlyList<BossTarget> targets,
+            GameConfig config,
+            CollisionMap map,
+            List<BossEvent> events)
+        {
+            BossTarget? nearest = Nearest(boss, targets);
+
+            if (boss.IsDead || nearest == null)
             {
                 return;
             }
@@ -133,12 +199,12 @@ namespace Game.Rules
             switch (boss.Phase)
             {
                 case BossPhase.Approach:
-                    Approach(boss, player, config, map, events);
+                    Approach(boss, nearest.Value.Movement, config, map, events);
                     break;
                 case BossPhase.Warning:
                     if (--boss.PhaseTicksLeft == 0)
                     {
-                        Strike(boss, player, resources, config, events);
+                        Strike(boss, targets, config, events);
                     }
 
                     break;
@@ -146,7 +212,7 @@ namespace Game.Rules
                     if (--boss.PhaseTicksLeft == 0)
                     {
                         BossAttackConfig attack = CurrentAttack(boss, config.Boss);
-                        HitPlayer(boss, player, resources, config, attack, SideBox(boss, attack, -boss.Facing), events);
+                        HitPlayers(boss, targets, config, attack, SideBox(boss, attack, -boss.Facing), events);
                         BeginRest(boss, config);
                     }
 
@@ -155,11 +221,36 @@ namespace Game.Rules
                     if (--boss.PhaseTicksLeft == 0)
                     {
                         boss.Phase = BossPhase.Approach;
-                        Approach(boss, player, config, map, events);
+                        Approach(boss, nearest.Value.Movement, config, map, events);
                     }
 
                     break;
             }
+        }
+
+        /// <summary>The living player closest along the ground; on a tie, the lowest id.</summary>
+        private static BossTarget? Nearest(BossState boss, IReadOnlyList<BossTarget> targets)
+        {
+            BossTarget? best = null;
+            double bestDistance = double.MaxValue;
+
+            foreach (BossTarget target in targets)
+            {
+                if (target.Resources.IsDead)
+                {
+                    continue;
+                }
+
+                double distance = Math.Abs(target.Movement.X - boss.X);
+
+                if (distance < bestDistance || (distance == bestDistance && target.PlayerId < best!.Value.PlayerId))
+                {
+                    best = target;
+                    bestDistance = distance;
+                }
+            }
+
+            return best;
         }
 
         private static void Approach(
@@ -196,14 +287,13 @@ namespace Game.Rules
             boss.Phase = BossPhase.Warning;
             boss.PhaseTicksLeft = Ticks.FromSeconds(attack.WarningSec);
             boss.LockedX = player.X;
-            boss.PlayerWasHit = false;
+            boss.PlayersHit.Clear();
             events.Add(new BossEvent(BossEventKind.WarningStarted, attack));
         }
 
         private static void Strike(
             BossState boss,
-            MovementState player,
-            ResourceState resources,
+            IReadOnlyList<BossTarget> targets,
             GameConfig config,
             List<BossEvent> events)
         {
@@ -211,12 +301,12 @@ namespace Game.Rules
 
             if (attack.Shape == BossAttackShape.Column)
             {
-                HitPlayer(boss, player, resources, config, attack, ColumnBox(boss, attack), events);
+                HitPlayers(boss, targets, config, attack, ColumnBox(boss, attack), events);
                 BeginRest(boss, config);
                 return;
             }
 
-            HitPlayer(boss, player, resources, config, attack, SideBox(boss, attack, boss.Facing), events);
+            HitPlayers(boss, targets, config, attack, SideBox(boss, attack, boss.Facing), events);
 
             if (attack.Shape == BossAttackShape.BothSides)
             {
@@ -229,27 +319,31 @@ namespace Game.Rules
             }
         }
 
-        private static void HitPlayer(
+        private static void HitPlayers(
             BossState boss,
-            MovementState player,
-            ResourceState resources,
+            IReadOnlyList<BossTarget> targets,
             GameConfig config,
             BossAttackConfig attack,
             in CombatBox strike,
             List<BossEvent> events)
         {
             double half = config.Movement.BodyWidth / 2d;
-            var body = new CombatBox(player.X - half, player.Y, player.X + half, player.Y + config.Movement.BodyHeight);
 
-            if (boss.PlayerWasHit || !strike.Overlaps(body))
+            foreach (BossTarget target in targets)
             {
-                return;
-            }
+                MovementState player = target.Movement;
+                var body = new CombatBox(player.X - half, player.Y, player.X + half, player.Y + config.Movement.BodyHeight);
 
-            boss.PlayerWasHit = true;
-            int damage = SkillDamage.AfterDefense(attack.Damage, config.Character.Defense);
-            ResourceRules.TakeDamage(resources, damage);
-            events.Add(new BossEvent(BossEventKind.PlayerHit, attack, damage));
+                if (target.Resources.IsDead || boss.PlayersHit.Contains(target.PlayerId) || !strike.Overlaps(body))
+                {
+                    continue;
+                }
+
+                boss.PlayersHit.Add(target.PlayerId);
+                int damage = SkillDamage.AfterDefense(attack.Damage, config.Character.Defense);
+                ResourceRules.TakeDamage(target.Resources, damage);
+                events.Add(new BossEvent(BossEventKind.PlayerHit, attack, damage, target.PlayerId));
+            }
         }
 
         private static void BeginRest(BossState boss, GameConfig config)

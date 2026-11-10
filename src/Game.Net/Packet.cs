@@ -7,7 +7,7 @@ namespace Game.Net
     public static class Packet
     {
         /// <summary>Raised whenever a packet's layout changes. Hello carries it; a mismatch is rejected.</summary>
-        public const ushort ProtocolVersion = 1;
+        public const ushort ProtocolVersion = 2;
 
         /// <summary>Anything larger is refused before reading, so a bad client cannot make the server allocate.</summary>
         public const int MaxSize = 4096;
@@ -49,68 +49,4 @@ namespace Game.Net
         }
     }
 
-    internal static class SnapshotCodec
-    {
-        public static void Write(PacketWriter writer, in MovementSnapshot snapshot)
-        {
-            writer.Double(snapshot.X);
-            writer.Double(snapshot.Y);
-            writer.Double(snapshot.VelocityY);
-            writer.SByte(checked((sbyte)snapshot.Facing));
-            writer.Bool(snapshot.Grounded);
-            writer.Double(snapshot.Stamina);
-            writer.Double(snapshot.PreviousMoveY);
-            writer.Int16(checked((short)snapshot.JumpBufferTicks));
-            writer.Int16(checked((short)snapshot.DashBufferTicks));
-            writer.Int16(checked((short)snapshot.CoyoteTicks));
-            writer.Int16(checked((short)snapshot.DashTicksLeft));
-            writer.SByte(checked((sbyte)snapshot.DashDirection));
-            writer.Int16(checked((short)snapshot.AirDashesUsed));
-            writer.Int16(checked((short)snapshot.StaminaDelayTicks));
-        }
-
-        public static MovementSnapshot Read(ref PacketReader reader)
-        {
-            double x = reader.Double();
-            double y = reader.Double();
-            double velocityY = reader.Double();
-            sbyte facing = SnapshotMessage.Facing(reader.SByte());
-            bool grounded = reader.Bool();
-            double stamina = reader.Double();
-            double previousMoveY = reader.Double();
-            int jumpBuffer = NotNegative(reader.Int16());
-            int dashBuffer = NotNegative(reader.Int16());
-            int coyote = NotNegative(reader.Int16());
-            int dashTicks = NotNegative(reader.Int16());
-            sbyte dashDirection = reader.SByte();
-            int airDashes = NotNegative(reader.Int16());
-            int staminaDelay = NotNegative(reader.Int16());
-
-            if (dashDirection < -1 || dashDirection > 1)
-            {
-                throw new ProtocolException($"dash direction must be -1, 0 or 1, got {dashDirection}");
-            }
-
-            return new MovementSnapshot(
-                x,
-                y,
-                velocityY,
-                facing,
-                grounded,
-                stamina,
-                previousMoveY,
-                jumpBuffer,
-                dashBuffer,
-                coyote,
-                dashTicks,
-                dashDirection,
-                airDashes,
-                staminaDelay);
-        }
-
-        private static int NotNegative(short value)
-        {
-            return value >= 0 ? value : throw new ProtocolException($"timer cannot be negative, got {value}");
-        }
-    }
 }

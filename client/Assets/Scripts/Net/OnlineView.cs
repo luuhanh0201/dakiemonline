@@ -6,8 +6,9 @@ using UnityEngine;
 namespace DaKiem.Client.Net
 {
     /// <summary>
-    /// Draws an online stay: the local player where prediction says, everyone else a few ticks in
-    /// the past so there are always two snapshots to blend between.
+    /// Draws an online fight: the local player where prediction says, everyone else and the boss a
+    /// few ticks in the past so there are always two snapshots to blend between. Hits, heals and
+    /// the boss's blows come from the server's events.
     /// </summary>
     public sealed class OnlineView
     {
@@ -16,19 +17,35 @@ namespace DaKiem.Client.Net
         private const float CorrectionSnapUnits = 2f;
         private const float LabelHeightUnits = 2.3f;
 
+        // The boss only needs one snapshot gap of delay; its red zone should show as early as possible.
+        private const double BossDelayTicks = 2d;
+
+        private static readonly IReadOnlyList<CombatEvent> NoEvents = new CombatEvent[0];
+
         private readonly OnlineClient client;
+        private readonly GameConfig config;
         private readonly CharacterView self;
+        private readonly FxView selfFx;
+        private readonly BossView bossView;
         private readonly WorldView world;
-        private readonly Dictionary<int, CharacterView> others = new Dictionary<int, CharacterView>();
+        private readonly Dictionary<int, Remote> others = new Dictionary<int, Remote>();
+        private readonly Dictionary<int, List<CombatEvent>> combatEvents = new Dictionary<int, List<CombatEvent>>();
+        private readonly HashSet<int> hurt = new HashSet<int>();
+        private readonly List<NetEvent> drained = new List<NetEvent>();
+        private readonly List<ProjectileSnapshot> shots = new List<ProjectileSnapshot>();
         private readonly List<int> gone = new List<int>();
         private Vector2 previousFeet;
         private Vector2 currentFeet;
         private Vector2 correction;
+        private bool bossHit;
 
-        public OnlineView(OnlineClient client, CharacterView self, WorldView world)
+        public OnlineView(OnlineClient client, GameConfig config, CharacterView self, FxView selfFx, BossView bossView, WorldView world)
         {
             this.client = client;
+            this.config = config;
             this.self = self;
+            this.selfFx = selfFx;
+            this.bossView = bossView;
             this.world = world;
             client.Welcomed += Restart;
         }
@@ -42,7 +59,7 @@ namespace DaKiem.Client.Net
             }
 
             previousFeet = currentFeet;
-            currentFeet = Feet(client.Predictor.State);
+            currentFeet = Feet(client.Predictor.Movement);
         }
 
         /// <summary>
@@ -56,7 +73,7 @@ namespace DaKiem.Client.Net
                 return;
             }
 
-            Vector2 jump = currentFeet - Feet(client.Predictor.State);
+            Vector2 jump = currentFeet - Feet(client.Predictor.Movement);
 
             if (jump.sqrMagnitude == 0f)
             {
@@ -76,12 +93,10 @@ namespace DaKiem.Client.Net
                 return;
             }
 
-            MovementState state = client.Predictor.State;
-            correction = Vector2.MoveTowards(correction, Vector2.zero, correction.magnitude * CorrectionFadePerSecond * frameSeconds + 0.001f);
-            Vector2 feet = Vector2.Lerp(previousFeet, currentFeet, blend) + correction;
-            world.Follow(feet, state.Facing);
-            self.Show(feet, state.Facing, state.Grounded, (float)state.VelocityY, state.IsDashing, CastPhase.None, false);
-            ShowOthers();
+            SortEvents();
+            ShowSelf(blend, frameSeconds);
+            ShowOthers(frameSeconds);
+            ShowBoss();
         }
 
         /// <summary>Names over heads, drawn from OnGUI.</summary>
@@ -94,7 +109,7 @@ namespace DaKiem.Client.Net
                 return;
             }
 
-            DrawLabel(camera, style, Feet(client.Predictor.State) + correction, $"P{client.PlayerId} (bạn)");
+            DrawLabel(camera, style, Feet(client.Predictor.Movement) + correction, $"P{client.PlayerId} (bạn)");
 
             foreach (KeyValuePair<int, RemoteTrack> pair in client.Tracks)
             {
@@ -104,30 +119,99 @@ namespace DaKiem.Client.Net
                 }
 
                 TrackSample sample = pair.Value.Sample(RenderTick());
-                string away = (sample.Flags & RemoteFlags.Away) != 0 ? " · mất kết nối" : string.Empty;
-                DrawLabel(camera, style, new Vector2(sample.X, sample.Y), $"P{pair.Key}{away}");
+                string state = (sample.Flags & RemoteFlags.Dead) != 0 ? " · đã gục"
+                    : (sample.Flags & RemoteFlags.Away) != 0 ? " · mất kết nối"
+                    : string.Empty;
+                DrawLabel(camera, style, new Vector2(sample.X, sample.Y), $"P{pair.Key}{state}");
             }
         }
 
         public void Clear()
         {
-            foreach (CharacterView view in others.Values)
+            foreach (Remote remote in others.Values)
             {
-                view.Destroy();
+                Forget(remote);
             }
 
             others.Clear();
+            bossView.SetVisible(false);
+            self.SetVisible(true);
         }
 
         private double RenderTick() => client.ServerClock.Tick - RemoteTrack.DefaultDelayTicks;
 
+        /// <summary>Removes a player who left; showing their effects for a new owner hides what was playing.</summary>
+        private void Forget(Remote remote)
+        {
+            remote.View.Destroy();
+            remote.Fx.Show(new object(), Movement(0f, 0f, 1, true), new CombatState(config.Potion), null, config.Boss, NoEvents, false, false, 0f);
+        }
+
         private void Restart()
         {
-            previousFeet = currentFeet = Feet(client.Predictor.State);
+            previousFeet = currentFeet = Feet(client.Predictor.Movement);
             correction = Vector2.zero;
         }
 
-        private void ShowOthers()
+        /// <summary>Splits the room's new events by player, as the rules' own event types.</summary>
+        private void SortEvents()
+        {
+            foreach (List<CombatEvent> list in combatEvents.Values)
+            {
+                list.Clear();
+            }
+
+            hurt.Clear();
+            bossHit = false;
+
+            foreach (NetEvent item in client.DrainEvents(drained))
+            {
+                if (item.Kind == RoomEventKind.Combat)
+                {
+                    if (!combatEvents.TryGetValue(item.PlayerId, out List<CombatEvent> list))
+                    {
+                        list = new List<CombatEvent>();
+                        combatEvents.Add(item.PlayerId, list);
+                    }
+
+                    list.Add(item.ToCombatEvent(config));
+                    bossHit |= item.CombatKind == CombatEventKind.SkillHit;
+                }
+                else if (item.Kind == RoomEventKind.Boss && item.BossKind == BossEventKind.PlayerHit)
+                {
+                    hurt.Add(item.PlayerId);
+                }
+            }
+        }
+
+        private IReadOnlyList<CombatEvent> EventsOf(int playerId)
+        {
+            return combatEvents.TryGetValue(playerId, out List<CombatEvent> list) ? list : NoEvents;
+        }
+
+        private BossState LivingBoss => client.Boss != null && !client.Boss.IsDead ? client.Boss : null;
+
+        private void ShowSelf(float blend, float frameSeconds)
+        {
+            Predictor predictor = client.Predictor;
+            MovementState state = predictor.Movement;
+            correction = Vector2.MoveTowards(correction, Vector2.zero, correction.magnitude * CorrectionFadePerSecond * frameSeconds + 0.001f);
+            Vector2 feet = Vector2.Lerp(previousFeet, currentFeet, blend) + correction;
+            world.Follow(feet, state.Facing);
+            selfFx.Show(client, state, predictor.Combat, LivingBoss, config.Boss, EventsOf(client.PlayerId), hurt.Contains(client.PlayerId), true, frameSeconds);
+            self.SetVisible(!predictor.Resources.IsDead);
+            self.Show(
+                feet,
+                state.Facing,
+                state.Grounded,
+                (float)state.VelocityY,
+                state.IsDashing,
+                predictor.Combat.Phase,
+                selfFx.PlayerHurt,
+                swing: SwingMoment.Of(predictor.Combat));
+        }
+
+        private void ShowOthers(float frameSeconds)
         {
             double tick = RenderTick();
 
@@ -138,23 +222,30 @@ namespace DaKiem.Client.Net
                     continue;
                 }
 
-                if (!others.TryGetValue(pair.Key, out CharacterView view))
+                if (!others.TryGetValue(pair.Key, out Remote remote))
                 {
-                    view = new CharacterView();
-                    others.Add(pair.Key, view);
+                    remote = new Remote(new CharacterView(), new FxView(world));
+                    others.Add(pair.Key, remote);
                 }
 
                 TrackSample now = pair.Value.Sample(tick);
                 TrackSample before = pair.Value.Sample(tick - 1d);
-                float verticalSpeed = (now.Y - before.Y) * Ticks.PerSecond;
-                view.Show(
+                bool dead = (now.Flags & RemoteFlags.Dead) != 0;
+                bool grounded = (now.Flags & RemoteFlags.Grounded) != 0;
+                MovementState movement = Movement(now.X, now.Y, now.Facing, grounded);
+                CombatState combat = CombatState.Showing(config, now.Casting, now.CastTicks, now.ComboStep, now.CastDirection, ShotsOf(pair.Key));
+
+                remote.View.SetVisible(!dead);
+                remote.Fx.Show(remote, movement, combat, LivingBoss, config.Boss, EventsOf(pair.Key), hurt.Contains(pair.Key), false, frameSeconds);
+                remote.View.Show(
                     new Vector2(now.X, now.Y),
                     now.Facing,
-                    (now.Flags & RemoteFlags.Grounded) != 0,
-                    verticalSpeed,
+                    grounded,
+                    (now.Y - before.Y) * Ticks.PerSecond,
                     (now.Flags & RemoteFlags.Dashing) != 0,
-                    CastPhase.None,
-                    false);
+                    combat.Phase,
+                    remote.Fx.PlayerHurt,
+                    swing: SwingMoment.Of(combat));
             }
 
             gone.Clear();
@@ -169,9 +260,43 @@ namespace DaKiem.Client.Net
 
             foreach (int id in gone)
             {
-                others[id].Destroy();
+                Forget(others[id]);
                 others.Remove(id);
             }
+        }
+
+        private void ShowBoss()
+        {
+            BossState boss = LivingBoss;
+            bossView.SetVisible(boss != null);
+
+            if (boss == null || client.BossTrack.Count == 0)
+            {
+                return;
+            }
+
+            float x = client.BossTrack.Sample(client.ServerClock.Tick - BossDelayTicks).X;
+            bossView.Show(x, boss, bossHit);
+        }
+
+        private List<ProjectileSnapshot> ShotsOf(int playerId)
+        {
+            shots.Clear();
+
+            foreach (RemoteProjectile shot in client.Projectiles)
+            {
+                if (shot.OwnerId == playerId)
+                {
+                    shots.Add(new ProjectileSnapshot(shot.Slot, shot.X, shot.Y, shot.Direction, 0d));
+                }
+            }
+
+            return new List<ProjectileSnapshot>(shots);
+        }
+
+        private static MovementState Movement(float x, float y, int facing, bool grounded)
+        {
+            return MovementState.FromSnapshot(new MovementSnapshot(x, y, 0d, facing, grounded, 0d, 0d, 0, 0, 0, 0, 0, 0, 0));
         }
 
         private static void DrawLabel(Camera camera, GUIStyle style, Vector2 feet, string text)
@@ -188,5 +313,17 @@ namespace DaKiem.Client.Net
         }
 
         private static Vector2 Feet(MovementState state) => new Vector2((float)state.X, (float)state.Y);
+
+        private sealed class Remote
+        {
+            public Remote(CharacterView view, FxView fx)
+            {
+                View = view;
+                Fx = fx;
+            }
+
+            public CharacterView View { get; }
+            public FxView Fx { get; }
+        }
     }
 }

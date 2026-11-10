@@ -335,6 +335,13 @@ namespace DaKiem.Client
             target.CopyTo(current, 0);
         }
 
+        /// <summary>Hides another player while they wait to come back.</summary>
+        public void SetVisible(bool visible)
+        {
+            root.gameObject.SetActive(visible);
+            shadow.gameObject.SetActive(visible);
+        }
+
         /// <summary>Removes the figure, for another player leaving the channel.</summary>
         public void Destroy()
         {

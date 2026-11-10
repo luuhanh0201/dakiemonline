@@ -2,11 +2,14 @@
   "version": 1,
   "id": "server.default",
   "status": "THU",
-  "source": "KE-HOACH-MOC-1; 20 nguoi moi kenh theo GDD 1.3, cac so con lai la de xuat",
+  "source": "KE-HOACH-MOC-1, KE-HOACH-MOC-2; 20 nguoi moi kenh theo GDD 1.3; hoi sinh 5 giay va boss 10 giay ban duyet 10/11/2026; cac so con lai la de xuat",
   "channels": 2,
   "playersPerChannel": 20,
   "spawnX": 5,
   "snapshotEveryTicks": 2,
   "reconnectHoldSec": 30,
-  "maxQueuedInputs": 6
+  "maxQueuedInputs": 6,
+  "playerRespawnSec": 5,
+  "bossRespawnSec": 10,
+  "testRoom": true
 }

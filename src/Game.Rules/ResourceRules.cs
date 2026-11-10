@@ -14,6 +14,14 @@ namespace Game.Rules
         public int Hp { get; internal set; }
         public double Energy { get; internal set; }
         public bool IsDead => Hp == 0;
+
+        public ResourceSnapshot Capture() => new ResourceSnapshot(Hp, Energy);
+
+        public void Restore(in ResourceSnapshot snapshot)
+        {
+            Hp = snapshot.Hp;
+            Energy = snapshot.Energy;
+        }
     }
 
     public static class ResourceRules

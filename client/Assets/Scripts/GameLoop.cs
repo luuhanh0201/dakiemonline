@@ -34,6 +34,7 @@ namespace DaKiem.Client
         private string menuError;
         private OnlineClient online;
         private OnlineView onlineView;
+        private bool refillPressed;
 
         private const string ServerAddressKey = "server.address";
         private const string ServerAddressFile = "server-address.txt";
@@ -219,7 +220,7 @@ namespace DaKiem.Client
                 (float)(fight.Resources.Energy / character.MaxEnergy),
                 (float)(fight.Player.Stamina / character.MaxStamina));
             hud.ShowBossHealth((float)fight.Boss.Hp / config.Boss.MaxHp);
-            ShowButtons();
+            ShowButtons(fight.Combat, fight.Resources);
 
             if (fight.Result != MatchResult.Playing && !hud.EndScreenVisible)
             {
@@ -236,9 +237,8 @@ namespace DaKiem.Client
             return fight.KilledBy == null ? summary : $"{summary}\nĐòn khiến thua: {fight.KilledBy.Name}";
         }
 
-        private void ShowButtons()
+        private void ShowButtons(CombatState combat, ResourceState resources)
         {
-            CombatState combat = fight.Combat;
 
             foreach (HudButtonSpec spec in HudLayout.Buttons)
             {
@@ -248,7 +248,7 @@ namespace DaKiem.Client
                 {
                     double left = combat.CooldownSecondsLeft(slot.Value);
                     SkillConfig skill = config.Skill(slot.Value);
-                    bool ready = Combat.IsSkillReady(combat, fight.Resources, skill);
+                    bool ready = Combat.IsSkillReady(combat, resources, skill);
                     hud.SetButton(spec.Button, left > 0d ? WholeSeconds(left) : spec.Label, !ready);
                     hud.SetCooldown(spec.Button, skill.CooldownSec > 0d ? (float)(left / skill.CooldownSec) : 0f);
                 }
@@ -351,7 +351,10 @@ namespace DaKiem.Client
             menuError = null;
             online = new OnlineClient(url, config);
             online.RoundTrip += milliseconds => NetLog.Write(online, milliseconds);
-            onlineView = new OnlineView(online, character, view);
+            bossView ??= new BossView();
+            fx ??= new FxView(view);
+            onlineView = new OnlineView(online, config, character, fx, bossView, view);
+            hud.ShowBossBar(true);
             accumulator = 0f;
         }
 
@@ -362,13 +365,13 @@ namespace DaKiem.Client
             onlineView.Clear();
             online = null;
             onlineView = null;
+            hud.ShowBossBar(false);
             menuError = reason;
         }
 
         private void UpdateOnline()
         {
             input.Update();
-            input.ConsumeCombat();
             input.ConsumeReplay();
             float frame = Mathf.Min(Time.unscaledDeltaTime, MaxFrameSeconds);
             online.Update(frame);
@@ -391,26 +394,28 @@ namespace DaKiem.Client
 
             while (accumulator >= Ticks.DeltaSeconds)
             {
-                online.Tick(input.MoveX, input.MoveY, input.ConsumeDash());
+                online.Tick(input.MoveX, input.MoveY, input.ConsumeDash(), input.ConsumeCombat(), refillPressed);
+                refillPressed = false;
                 onlineView.AfterTick();
                 accumulator -= (float)Ticks.DeltaSeconds;
             }
 
             onlineView.Show(accumulator / (float)Ticks.DeltaSeconds, frame);
 
-            if (online.Predictor != null)
+            Predictor predictor = online.Predictor;
+
+            if (predictor == null)
             {
-                hud.ShowResources(1f, 1f, (float)(online.Predictor.State.Stamina / config.Character.MaxStamina));
+                return;
             }
 
-            foreach (HudButtonSpec spec in HudLayout.Buttons)
-            {
-                if (spec.Button != HudButton.Dash)
-                {
-                    hud.SetButton(spec.Button, spec.Label, true);
-                    hud.SetCooldown(spec.Button, 0f);
-                }
-            }
+            CharacterConfig stats = config.Character;
+            hud.ShowResources(
+                (float)predictor.Resources.Hp / stats.MaxHp,
+                (float)(predictor.Resources.Energy / stats.MaxEnergy),
+                (float)(predictor.Movement.Stamina / stats.MaxStamina));
+            hud.ShowBossHealth(online.Boss == null ? 1f : (float)online.Boss.Hp / config.Boss.MaxHp);
+            ShowButtons(predictor.Combat, predictor.Resources);
         }
 
         private void DrawOnline(GUIStyle style)
@@ -438,7 +443,45 @@ namespace DaKiem.Client
             if (GUI.Button(new Rect(Screen.width - unit * 3.2f, unit * 0.2f, unit * 3f, unit * 0.9f), "Thoát", button))
             {
                 LeaveServer(null);
+                return;
             }
+
+            // Only the test room has a refill button; real play never shows it.
+            if (online.TestRoom
+                && online.Status == OnlineStatus.Playing
+                && GUI.Button(new Rect(Screen.width - unit * 3.2f, unit * 1.3f, unit * 3f, unit * 0.9f), "Nạp đầy", button))
+            {
+                refillPressed = true;
+            }
+
+            DrawNotice(small, shadow);
+        }
+
+        /// <summary>Tells a fallen player, or everyone after a won fight, when things come back.</summary>
+        private void DrawNotice(GUIStyle style, GUIStyle shadow)
+        {
+            Predictor predictor = online.Predictor;
+            string notice = null;
+
+            if (predictor != null && predictor.Resources.IsDead)
+            {
+                notice = $"Bạn đã gục. Hồi sinh sau {Mathf.CeilToInt(predictor.RespawnTicksLeft / (float)Ticks.PerSecond)} giây";
+            }
+            else if (online.Boss != null && online.Boss.IsDead)
+            {
+                notice = $"Đã hạ boss! Boss xuất hiện lại sau {Mathf.CeilToInt(online.BossRespawnTicks / (float)Ticks.PerSecond)} giây";
+            }
+
+            if (notice == null)
+            {
+                return;
+            }
+
+            var big = new GUIStyle(style) { fontSize = style.fontSize * 3 / 2, alignment = TextAnchor.MiddleCenter };
+            var bigShadow = new GUIStyle(big) { normal = { textColor = Color.black } };
+            var area = new Rect(0f, Screen.height * 0.3f, Screen.width, Screen.height * 0.15f);
+            GUI.Label(new Rect(area.x + 2f, area.y + 2f, area.width, area.height), notice, bigShadow);
+            GUI.Label(area, notice, big);
         }
 
         private void OnApplicationQuit()

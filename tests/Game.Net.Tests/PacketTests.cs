@@ -6,6 +6,52 @@ public class PacketTests
 {
     private static readonly MovementSnapshot Moving = new(12.345678901234d, 1.5d, -3.25d, -1, false, 73.3333333d, 0.6d, 4, 0, 2, 5, -1, 1, 29);
 
+    private static readonly BossSnapshot Boss = new(4321, 17.25d, -1, BossPhase.Warning, 3, 12, 15.5d, 20, 20d);
+
+    private static PlayerSnapshot Fighting()
+    {
+        var combat = new CombatSnapshot
+        {
+            Casting = SkillSlot.Ultimate,
+            CastTicks = 14,
+            ComboStep = 2,
+            Direction = -1,
+            OriginX = 11.75d,
+            LastHitPhase = -1,
+            PotionsLeft = 3,
+            BufferedSkill = SkillSlot.Ranged,
+            SkillBufferTicks = 2,
+            PotionBufferTicks = 1,
+            PotionCooldownTicks = 120,
+            ComboWindowTicks = 4,
+            Projectiles = new[] { new ProjectileSnapshot(SkillSlot.Ranged, 13.5d, 0.5d, -1, 2.25d) },
+        };
+        combat.Cooldowns[(int)SkillSlot.Ranged] = 90;
+        combat.Cooldowns[(int)SkillSlot.Ultimate] = 1040;
+        return new PlayerSnapshot(Moving, combat, new ResourceSnapshot(640, 47.5d), 0);
+    }
+
+    private static SnapshotMessage FullSnapshot(int others = 2)
+    {
+        RemotePlayer[] players = Enumerable.Range(0, others)
+            .Select(index => new RemotePlayer(7 + index, 3.5f + index, 0f, 1, RemoteFlags.Grounded, SkillSlot.OptionB, 9, 0, -1))
+            .ToArray();
+        return new SnapshotMessage(
+            900u,
+            880u,
+            Fighting(),
+            Boss,
+            0,
+            players,
+            new[] { new RemoteProjectile(7, SkillSlot.Ranged, 6f, 0.5f, 1) },
+            new[]
+            {
+                new NetEvent(RoomEventKind.Combat, 7, CombatEventKind.SkillHit, SkillSlot.OptionB, 130, 0),
+                new NetEvent(RoomEventKind.Boss, 9, amount: 120, bossKind: BossEventKind.PlayerHit, bossAttack: 4),
+                new NetEvent(RoomEventKind.PlayerDied, 9),
+            });
+    }
+
     private static T RoundTrip<T>(T message)
         where T : NetMessage
     {
@@ -27,12 +73,12 @@ public class PacketTests
     }
 
     [Fact]
-    public void WelcomeKeepsTheExactMovementState()
+    public void WelcomeKeepsTheExactPlayerState()
     {
         var token = new byte[Packet.TokenSize];
         token[3] = 200;
 
-        WelcomeMessage welcome = RoundTrip(new WelcomeMessage(42, 2, 123456u, true, token, 999u, Moving));
+        WelcomeMessage welcome = RoundTrip(new WelcomeMessage(42, 2, 123456u, true, token, 999u, true, Fighting()));
 
         Assert.Equal(42, welcome.PlayerId);
         Assert.Equal(2, welcome.ChannelId);
@@ -40,7 +86,8 @@ public class PacketTests
         Assert.True(welcome.Resumed);
         Assert.Equal(token, welcome.Token);
         Assert.Equal(999u, welcome.LastInputSequence);
-        Assert.Equal(Moving, welcome.Self);
+        Assert.True(welcome.TestRoom);
+        Assert.Equal(Fighting(), welcome.Self);
     }
 
     [Fact]
@@ -66,47 +113,82 @@ public class PacketTests
         Assert.True(input.Dash);
     }
 
-    [Fact]
-    public void InputIntentIsTheSameOnBothSides()
+    [Theory]
+    [InlineData(null, false, false)]
+    [InlineData(SkillSlot.Attack, false, false)]
+    [InlineData(SkillSlot.OptionB, true, false)]
+    [InlineData(SkillSlot.Ultimate, false, true)]
+    public void InputCarriesButtons(SkillSlot? skill, bool potion, bool refill)
     {
-        InputMessage sent = InputMessage.FromJoystick(5, 0.73d, 0.61d, false);
-        InputMessage received = RoundTrip(sent);
+        InputMessage input = RoundTrip(InputMessage.FromJoystick(5, 0.73d, 0.61d, false, skill, potion, refill));
+        RoomIntent intent = input.ToIntent();
 
-        Assert.Equal(sent.ToIntent().MoveX, received.ToIntent().MoveX);
-        Assert.Equal(sent.ToIntent().MoveY, received.ToIntent().MoveY);
-        Assert.Equal(1d, InputMessage.FromJoystick(1, 1d, 0d, false).ToIntent().MoveX);
+        Assert.Equal(skill, intent.Combat.SkillPressed);
+        Assert.Equal(potion, intent.Combat.PotionPressed);
+        Assert.Equal(refill, intent.Refill);
+        Assert.False(intent.Move.DashPressed);
+        Assert.Equal(InputMessage.FromJoystick(5, 0.73d, 0.61d, false).ToIntent().Move.MoveX, intent.Move.MoveX);
+        Assert.Equal(1d, InputMessage.FromJoystick(1, 1d, 0d, false).ToIntent().Move.MoveX);
     }
 
     [Fact]
-    public void SnapshotCarriesSelfAndOthers()
+    public void InputHasNoRoomForDamage()
     {
-        var others = new[]
-        {
-            new RemotePlayer(7, 3.5f, 0f, 1, RemoteFlags.Grounded),
-            new RemotePlayer(9, 20.25f, 1.5f, -1, RemoteFlags.Dashing | RemoteFlags.Away),
-        };
+        // The client can only say which buttons it pressed: 1 type, 4 sequence, 2 stick, 1 flags, 1 skill.
+        Assert.Equal(9, Packet.Encode(InputMessage.FromJoystick(1, 1d, 1d, true, SkillSlot.Ultimate, true, true)).Length);
+    }
 
-        SnapshotMessage snapshot = RoundTrip(new SnapshotMessage(900u, 880u, Moving, others));
+    [Fact]
+    public void SnapshotCarriesEverything()
+    {
+        SnapshotMessage snapshot = RoundTrip(FullSnapshot());
 
         Assert.Equal(900u, snapshot.ServerTick);
         Assert.Equal(880u, snapshot.AckSequence);
-        Assert.Equal(Moving, snapshot.Self);
+        Assert.Equal(Fighting(), snapshot.Self);
+        Assert.Equal(Boss, snapshot.Boss);
         Assert.Equal(2, snapshot.Others.Count);
-        Assert.Equal(9, snapshot.Others[1].Id);
-        Assert.Equal(20.25f, snapshot.Others[1].X);
-        Assert.Equal(1.5f, snapshot.Others[1].Y);
-        Assert.Equal(-1, snapshot.Others[1].Facing);
-        Assert.Equal(RemoteFlags.Dashing | RemoteFlags.Away, snapshot.Others[1].Flags);
+        RemotePlayer other = snapshot.Others[1];
+        Assert.Equal(8, other.Id);
+        Assert.Equal(4.5f, other.X);
+        Assert.Equal(SkillSlot.OptionB, other.Casting);
+        Assert.Equal(9, other.CastTicks);
+        Assert.Equal(-1, other.CastDirection);
+        RemoteProjectile shot = Assert.Single(snapshot.Projectiles);
+        Assert.Equal(SkillSlot.Ranged, shot.Slot);
+        Assert.Equal(6f, shot.X);
+        Assert.Equal(3, snapshot.Events.Count);
+        Assert.Equal(130, snapshot.Events[0].Amount);
+        Assert.Equal(SkillSlot.OptionB, snapshot.Events[0].Slot);
+        Assert.Equal(BossEventKind.PlayerHit, snapshot.Events[1].BossKind);
+        Assert.Equal(4, snapshot.Events[1].BossAttack);
+        Assert.Equal(RoomEventKind.PlayerDied, snapshot.Events[2].Kind);
     }
 
     [Fact]
-    public void SnapshotForTwentyPlayersStaysSmall()
+    public void EventsTurnBackIntoTheRulesEvents()
     {
-        RemotePlayer[] others = Enumerable.Range(1, 19).Select(id => new RemotePlayer(id, id, 0f, 1, RemoteFlags.Grounded)).ToArray();
+        GameConfig config = TestConfig.Load();
+        BossAttackConfig attack = config.Boss.Cycle[4];
+        var hit = new RoomEvent(RoomEventKind.Boss, 3, boss: new BossEvent(BossEventKind.PlayerHit, attack, 250, 3));
+        var slash = new RoomEvent(RoomEventKind.Combat, 2, new CombatEvent(CombatEventKind.SkillHit, SkillSlot.OptionB, 130, config.Skill(SkillSlot.OptionB).Slow, 0));
 
-        byte[] packet = Packet.Encode(new SnapshotMessage(1u, 1u, Moving, others));
+        BossEvent bossBack = NetEvent.From(hit, config.Boss).ToBossEvent(config.Boss);
+        CombatEvent combatBack = NetEvent.From(slash, config.Boss).ToCombatEvent(config);
 
-        Assert.True(packet.Length < 400, $"{packet.Length} bytes");
+        Assert.Same(attack, bossBack.Attack);
+        Assert.Equal(250, bossBack.Damage);
+        Assert.Equal(3, bossBack.PlayerId);
+        Assert.Equal(130, combatBack.Amount);
+        Assert.Same(config.Skill(SkillSlot.OptionB).Slow, combatBack.Slow);
+    }
+
+    [Fact]
+    public void SnapshotForTwentyPlayersFitsInOnePacket()
+    {
+        byte[] packet = Packet.Encode(FullSnapshot(others: 19));
+
+        Assert.True(packet.Length < 1000, $"{packet.Length} bytes");
     }
 
     [Fact]
@@ -135,7 +217,7 @@ public class PacketTests
     [Fact]
     public void EveryTruncationOfASnapshotIsRejected()
     {
-        byte[] packet = Packet.Encode(new SnapshotMessage(1u, 1u, Moving, new[] { new RemotePlayer(1, 1f, 1f, 1, RemoteFlags.None) }));
+        byte[] packet = Packet.Encode(FullSnapshot());
 
         for (int length = 1; length < packet.Length; length++)
         {
@@ -152,26 +234,31 @@ public class PacketTests
         Assert.Contains("left over", Assert.Throws<ProtocolException>(() => Packet.Decode(packet)).Message);
     }
 
-    [Fact]
-    public void BadValuesAreRejected()
+    [Theory]
+    [InlineData(5, 0x80)]
+    [InlineData(7, 8)]
+    [InlineData(8, 7)]
+    public void BadInputValuesAreRejected(int offset, byte value)
     {
         byte[] input = Packet.Encode(InputMessage.FromJoystick(1, 0d, 0d, false));
-        input[^1] = 2;
+        input[offset] = value;
+
         Assert.Throws<ProtocolException>(() => Packet.Decode(input));
+    }
 
-        byte[] stick = Packet.Encode(InputMessage.FromJoystick(1, 0d, 0d, false));
-        stick[5] = 0x80;
-        Assert.Throws<ProtocolException>(() => Packet.Decode(stick));
-
+    [Fact]
+    public void UnknownRejectReasonIsRejected()
+    {
         byte[] reject = Packet.Encode(new RejectMessage(RejectReason.BadMessage));
         reject[1] = 77;
+
         Assert.Throws<ProtocolException>(() => Packet.Decode(reject));
     }
 
     [Fact]
     public void NotFiniteNumbersAreRejected()
     {
-        byte[] packet = Packet.Encode(new SnapshotMessage(1u, 1u, Moving, Array.Empty<RemotePlayer>()));
+        byte[] packet = Packet.Encode(FullSnapshot());
         BitConverter.GetBytes(double.NaN).CopyTo(packet, 9);
 
         Assert.Contains("finite", Assert.Throws<ProtocolException>(() => Packet.Decode(packet)).Message);

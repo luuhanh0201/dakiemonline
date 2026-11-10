@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Game.Rules
 {
@@ -194,6 +195,100 @@ namespace Game.Rules
         }
 
         public double PotionCooldownSecondsLeft => PotionCooldownTicks * Ticks.DeltaSeconds;
+
+        public CombatSnapshot Capture()
+        {
+            var cooldowns = new int[CombatSnapshot.SlotCount];
+
+            foreach (KeyValuePair<SkillSlot, int> pair in CooldownTicks)
+            {
+                cooldowns[(int)pair.Key] = pair.Value;
+            }
+
+            return new CombatSnapshot
+            {
+                Casting = Casting?.Slot,
+                CastTicks = CastTicks,
+                ComboStep = ComboStep,
+                Direction = Direction,
+                OriginX = OriginX,
+                LastHitPhase = LastHitPhase,
+                PotionsLeft = PotionsLeft,
+                Cooldowns = cooldowns,
+                BufferedSkill = BufferedSkill,
+                SkillBufferTicks = SkillBufferTicks,
+                PotionBufferTicks = PotionBufferTicks,
+                PotionCooldownTicks = PotionCooldownTicks,
+                ComboWindowTicks = ComboWindowTicks,
+                Projectiles = projectiles
+                    .Select(shot => new ProjectileSnapshot(shot.Slot, shot.X, shot.Y, shot.Direction, shot.Travelled))
+                    .ToList(),
+            };
+        }
+
+        /// <summary>Puts the state back as captured; cast timings are rebuilt from the skill in the config.</summary>
+        public void Restore(CombatSnapshot snapshot, GameConfig config)
+        {
+            Casting = snapshot.Casting == null ? null : config.Skill(snapshot.Casting.Value);
+
+            if (Casting != null)
+            {
+                Combat.SetTimings(this, Casting);
+            }
+
+            CastTicks = snapshot.CastTicks;
+            ComboStep = snapshot.ComboStep;
+            Direction = snapshot.Direction;
+            OriginX = snapshot.OriginX;
+            LastHitPhase = snapshot.LastHitPhase;
+            PotionsLeft = snapshot.PotionsLeft;
+            CooldownTicks.Clear();
+
+            for (int slot = 0; slot < snapshot.Cooldowns.Length; slot++)
+            {
+                if (snapshot.Cooldowns[slot] > 0)
+                {
+                    CooldownTicks[(SkillSlot)slot] = snapshot.Cooldowns[slot];
+                }
+            }
+
+            BufferedSkill = snapshot.BufferedSkill;
+            SkillBufferTicks = snapshot.SkillBufferTicks;
+            PotionBufferTicks = snapshot.PotionBufferTicks;
+            PotionCooldownTicks = snapshot.PotionCooldownTicks;
+            ComboWindowTicks = snapshot.ComboWindowTicks;
+            projectiles.Clear();
+
+            foreach (ProjectileSnapshot shot in snapshot.Projectiles)
+            {
+                SkillProjectile flight = config.Skill(shot.Slot).Projectile
+                    ?? throw new ArgumentException($"skill {shot.Slot} has no projectile", nameof(snapshot));
+                projectiles.Add(new Projectile(shot.Slot, flight, shot.X, shot.Y, shot.Direction) { Travelled = shot.Travelled });
+            }
+        }
+
+        /// <summary>A cast as another player sees it: only the skill, how far in, the combo step and the direction.</summary>
+        public static CombatState Showing(
+            GameConfig config,
+            SkillSlot? casting,
+            int castTicks,
+            int comboStep,
+            int direction,
+            IReadOnlyList<ProjectileSnapshot>? projectiles = null)
+        {
+            var combat = new CombatState(config.Potion);
+            combat.Restore(
+                new CombatSnapshot
+                {
+                    Casting = casting,
+                    CastTicks = castTicks,
+                    ComboStep = comboStep,
+                    Direction = direction,
+                    Projectiles = projectiles ?? Array.Empty<ProjectileSnapshot>(),
+                },
+                config);
+            return combat;
+        }
     }
 
     /// <summary>One tick of a player: skills, potion, movement and resources, in that order.</summary>
@@ -322,7 +417,8 @@ namespace Game.Rules
             events.Add(new CombatEvent(CombatEventKind.SkillStarted, slot));
         }
 
-        private static void BeginCast(CombatState combat, MovementState movement, SkillConfig skill, double moveX, CombatTarget? target)
+        /// <summary>The tick each part of a cast ends on; a snapshot only carries the skill and how far in it is.</summary>
+        internal static void SetTimings(CombatState combat, SkillConfig skill)
         {
             // Phase ends round from the running total so a skill's full length stays exact at 30 ticks.
             double seconds = skill.WindupSec;
@@ -339,6 +435,11 @@ namespace Game.Rules
             combat.PhaseEndTicks = phaseEnds;
             combat.ActiveEndTicks = phaseEnds.Length > 0 ? phaseEnds[phaseEnds.Length - 1] : combat.WindupTicks;
             combat.TotalTicks = Ticks.FromSeconds(seconds + skill.RecoverySec);
+        }
+
+        private static void BeginCast(CombatState combat, MovementState movement, SkillConfig skill, double moveX, CombatTarget? target)
+        {
+            SetTimings(combat, skill);
             combat.Casting = skill;
             combat.CastTicks = 0;
             combat.LastHitPhase = NoPhase;

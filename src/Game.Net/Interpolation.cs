@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Game.Rules;
 
 namespace Game.Net
 {
@@ -40,15 +41,20 @@ namespace Game.Net
         }
     }
 
+    /// <summary>Where another player is at a moment, and the skill they are in the middle of.</summary>
     public readonly struct TrackSample
     {
-        public TrackSample(double tick, float x, float y, sbyte facing, RemoteFlags flags)
+        public TrackSample(double tick, float x, float y, in RemotePlayer source, int castTicks)
         {
             Tick = tick;
             X = x;
             Y = y;
-            Facing = facing;
-            Flags = flags;
+            Facing = source.Facing;
+            Flags = source.Flags;
+            Casting = source.Casting;
+            CastTicks = castTicks;
+            ComboStep = source.ComboStep;
+            CastDirection = source.CastDirection;
         }
 
         public double Tick { get; }
@@ -56,6 +62,10 @@ namespace Game.Net
         public float Y { get; }
         public sbyte Facing { get; }
         public RemoteFlags Flags { get; }
+        public SkillSlot? Casting { get; }
+        public int CastTicks { get; }
+        public int ComboStep { get; }
+        public sbyte CastDirection { get; }
     }
 
     /// <summary>Recent positions of one other player, drawn a little in the past so there are two to blend.</summary>
@@ -66,7 +76,7 @@ namespace Game.Net
 
         private const int MaxSamples = 32;
 
-        private readonly List<TrackSample> samples = new List<TrackSample>();
+        private readonly List<(uint Tick, RemotePlayer Player)> samples = new List<(uint, RemotePlayer)>();
 
         public int Count => samples.Count;
 
@@ -82,10 +92,13 @@ namespace Game.Net
                 samples.RemoveAt(0);
             }
 
-            samples.Add(new TrackSample(serverTick, player.X, player.Y, player.Facing, player.Flags));
+            samples.Add((serverTick, player));
         }
 
-        /// <summary>The position at a tick: blended between samples, held at the ends.</summary>
+        /// <summary>
+        /// The position at a tick: blended between samples, held at the ends. Facing and flags come
+        /// from the nearer sample; a cast keeps running from the sample it started in.
+        /// </summary>
         public TrackSample Sample(double tick)
         {
             if (samples.Count == 0)
@@ -93,32 +106,47 @@ namespace Game.Net
                 throw new InvalidOperationException("no samples yet");
             }
 
-            if (tick <= samples[0].Tick)
+            (uint firstTick, RemotePlayer first) = samples[0];
+
+            if (tick <= firstTick)
             {
-                return samples[0];
+                return new TrackSample(tick, first.X, first.Y, first, first.CastTicks);
             }
 
             for (int index = 1; index < samples.Count; index++)
             {
-                TrackSample after = samples[index];
+                (uint afterTick, RemotePlayer after) = samples[index];
 
-                if (tick > after.Tick)
+                if (tick > afterTick)
                 {
                     continue;
                 }
 
-                TrackSample before = samples[index - 1];
-                float share = (float)((tick - before.Tick) / (after.Tick - before.Tick));
-                TrackSample nearer = share < 0.5f ? before : after;
+                (uint beforeTick, RemotePlayer before) = samples[index - 1];
+                float share = (float)((tick - beforeTick) / (afterTick - beforeTick));
+                RemotePlayer nearer = share < 0.5f ? before : after;
                 return new TrackSample(
                     tick,
                     before.X + (after.X - before.X) * share,
                     before.Y + (after.Y - before.Y) * share,
-                    nearer.Facing,
-                    nearer.Flags);
+                    nearer,
+                    CastTicksAt(before, beforeTick, nearer, tick));
             }
 
-            return samples[samples.Count - 1];
+            (uint lastTick, RemotePlayer last) = samples[samples.Count - 1];
+            return new TrackSample(tick, last.X, last.Y, last, CastTicksAt(last, lastTick, last, tick));
+        }
+
+        private static int CastTicksAt(in RemotePlayer from, uint fromTick, in RemotePlayer shown, double tick)
+        {
+            if (shown.Casting == null)
+            {
+                return 0;
+            }
+
+            // Run on from the earlier sample while it is the same cast, so the pose moves every frame.
+            bool sameCast = from.Casting == shown.Casting && from.CastTicks <= shown.CastTicks;
+            return sameCast ? from.CastTicks + (int)Math.Floor(tick - fromTick) : shown.CastTicks;
         }
     }
 

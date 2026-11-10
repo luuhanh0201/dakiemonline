@@ -105,6 +105,9 @@ namespace Game.Rules
                 SnapshotEveryTicks = PositiveInt(root, "snapshotEveryTicks"),
                 ReconnectHoldSec = root.NotNegative("reconnectHoldSec"),
                 MaxQueuedInputs = PositiveInt(root, "maxQueuedInputs"),
+                PlayerRespawnSec = root.Positive("playerRespawnSec"),
+                BossRespawnSec = root.Positive("bossRespawnSec"),
+                TestRoom = root.Boolean("testRoom"),
             };
 
             ReadEntry(root, config);

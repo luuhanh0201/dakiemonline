@@ -53,20 +53,37 @@ namespace DaKiem.Client
 
         public void Show(float x, Simulation fight)
         {
+            bool hit = false;
+
             foreach (CombatEvent item in fight.CombatEvents)
             {
-                if (item.Kind == CombatEventKind.SkillHit)
-                {
-                    hitFlashUntil = Time.unscaledTime + HitFlashSeconds;
-                }
+                hit |= item.Kind == CombatEventKind.SkillHit;
             }
 
-            bool attacking = fight.Boss.Phase == BossPhase.Warning || fight.Boss.Phase == BossPhase.Striking;
+            Show(x, fight.Boss, hit);
+        }
+
+        /// <summary>Online a beaten boss is gone until it comes back.</summary>
+        public void SetVisible(bool visible)
+        {
+            body.gameObject.SetActive(visible);
+            shadow.gameObject.SetActive(visible);
+        }
+
+        /// <summary>Draws the boss at x; it flashes when a blow landed since the last frame.</summary>
+        public void Show(float x, BossState boss, bool wasHit)
+        {
+            if (wasHit)
+            {
+                hitFlashUntil = Time.unscaledTime + HitFlashSeconds;
+            }
+
+            bool attacking = boss.Phase == BossPhase.Warning || boss.Phase == BossPhase.Striking;
             bool breathedIn = !attacking && Mathf.FloorToInt(Time.time * BreathStepsPerSecond) % 2 == 0;
             float squash = breathedIn ? 1f - BreathSquash : 1f;
 
             renderer.sprite = attacking ? attack : idle;
-            renderer.flipX = fight.Boss.Facing < 0;
+            renderer.flipX = boss.Facing < 0;
             renderer.color = Time.unscaledTime < hitFlashUntil ? HitColor : Color.white;
             body.localScale = new Vector3(1f, squash, 1f);
             body.position = new Vector3(x, renderer.sprite.bounds.size.y * squash / 2f, 0f);

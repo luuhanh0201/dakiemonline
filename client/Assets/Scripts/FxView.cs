@@ -14,7 +14,7 @@ namespace DaKiem.Client
         private readonly List<WaterEffect> projectiles = new List<WaterEffect>();
         private readonly PackageSlashFx packageSlash = new PackageSlashFx();
         private readonly WaterSprites drawnWater = new WaterSprites();
-        private Simulation lastFight;
+        private object lastOwner;
         private SkillConfig lastSkill;
         private int lastHitIndex = -1, replacement;
         private float hurtFlashUntil, clock;
@@ -46,13 +46,26 @@ namespace DaKiem.Client
 
         public void Show(Simulation fight, BossConfig boss, float frameSeconds = -1f)
         {
-            if (fight != lastFight)
+            bool hurt = false;
+            foreach (BossEvent item in fight.BossEvents)
+                hurt |= item.Kind == BossEventKind.PlayerHit;
+            Show(fight, fight.Player, fight.Combat, fight.Boss, boss, fight.CombatEvents, hurt, true, frameSeconds);
+        }
+
+        /// <summary>
+        /// Draws one character's effects. The owner changes when a new fight or player starts; only one
+        /// view per screen shows the boss's red zone. The boss can be null while it is away.
+        /// </summary>
+        public void Show(object owner, MovementState player, CombatState combat, BossState boss, BossConfig bossConfig,
+            IReadOnlyList<CombatEvent> events, bool hurt, bool showWarning, float frameSeconds = -1f)
+        {
+            if (owner != lastOwner)
             {
                 foreach (var effect in effects) effect.Hide();
                 foreach (var effect in projectiles) effect.Hide();
                 drawnWater.Clear();
                 shakeAt = -1f;
-                lastFight = fight; lastSkill = null; lastHitIndex = -1;
+                lastOwner = owner; lastSkill = null; lastHitIndex = -1;
                 hurtFlashUntil = 0f; clock = 0f;
             }
             float dt = Mathf.Max(0f, frameSeconds < 0f ? Time.deltaTime : frameSeconds);
@@ -64,31 +77,30 @@ namespace DaKiem.Client
                 world.Shake();
                 shakeAt = -1f;
             }
-            ShowBox(warningZone, BossAi.WarningZone(fight.Boss, boss));
+            ShowBox(warningZone, showWarning && boss != null ? BossAi.WarningZone(boss, bossConfig) : null);
             if (drawnWater.HasShots)
             {
                 foreach (var effect in projectiles) effect.Hide();
                 int landed = 0;
-                foreach (CombatEvent item in fight.CombatEvents)
+                foreach (CombatEvent item in events)
                     if (item.Kind == CombatEventKind.SkillHit && item.Slot == SkillSlot.Ranged) landed++;
-                drawnWater.ShowShots(fight.Combat.Projectiles, landed, dt);
+                drawnWater.ShowShots(combat.Projectiles, landed, dt);
             }
             else
             {
-                ShowProjectiles(fight.Combat.Projectiles);
+                ShowProjectiles(combat.Projectiles);
             }
-            StartSlash(fight);
-            foreach (CombatEvent item in fight.CombatEvents)
+            StartSlash(player, combat);
+            foreach (CombatEvent item in events)
             {
-                if (item.Kind == CombatEventKind.SkillHit) StartSpark(fight, boss, item);
+                if (item.Kind == CombatEventKind.SkillHit && boss != null) StartSpark(player, combat, boss, bossConfig, item);
                 else if ((item.Kind == CombatEventKind.SelfHealed || item.Kind == CombatEventKind.PotionUsed) && drawnWater.HasHeal)
-                    drawnWater.PlayHeal(new Vector2((float)fight.Player.X, (float)fight.Player.Y));
+                    drawnWater.PlayHeal(new Vector2((float)player.X, (float)player.Y));
                 else if (item.Kind == CombatEventKind.SelfHealed || item.Kind == CombatEventKind.PotionUsed)
-                    Play(WaterForm.Heal, new Vector2((float)fight.Player.X, (float)fight.Player.Y + 0.5f),
+                    Play(WaterForm.Heal, new Vector2((float)player.X, (float)player.Y + 0.5f),
                         new Vector2(1.3f, 1.2f), 1, 0.8f);
             }
-            foreach (BossEvent item in fight.BossEvents)
-                if (item.Kind == BossEventKind.PlayerHit) hurtFlashUntil = Time.unscaledTime + 0.2f;
+            if (hurt) hurtFlashUntil = Time.unscaledTime + 0.2f;
         }
 
         private static void ShowBox(Transform block, CombatBox? box)
@@ -112,16 +124,15 @@ namespace DaKiem.Client
             }
         }
 
-        private void StartSlash(Simulation fight)
+        private void StartSlash(MovementState player, CombatState combat)
         {
-            CombatState combat = fight.Combat;
-            StartGather(fight);
+            StartGather(player, combat);
             SkillConfig skill = combat.Phase == CastPhase.Active ? combat.Casting : null;
             if (skill == null) { lastSkill = null; lastHitIndex = -1; return; }
             if (skill == lastSkill && combat.ActiveHitIndex == lastHitIndex) return;
             lastSkill = skill; lastHitIndex = combat.ActiveHitIndex;
-            int facing = fight.Player.Facing;
-            var feet = new Vector2((float)fight.Player.X, (float)fight.Player.Y);
+            int facing = player.Facing;
+            var feet = new Vector2((float)player.X, (float)player.Y);
             float reach = skill.Hitbox == null ? 0f : (float)skill.Hitbox.Width;
             if (packageSlash.Enabled && PlayPackageSlash(combat, skill, feet, facing, reach)) return;
             switch (skill.Slot)
@@ -163,9 +174,9 @@ namespace DaKiem.Client
         }
 
         /// <summary>Water gathers at the feet from the windup of the ultimate until its last blow.</summary>
-        private void StartGather(Simulation fight)
+        private void StartGather(MovementState player, CombatState combat)
         {
-            SkillConfig skill = fight.Combat.Casting;
+            SkillConfig skill = combat.Casting;
             bool ultimate = skill != null && skill.Slot == SkillSlot.Ultimate;
             if (!ultimate) { gathering = false; return; }
             if (gathering || !drawnWater.HasUltimate || packageSlash.Enabled) return;
@@ -173,7 +184,7 @@ namespace DaKiem.Client
 
             double seconds = skill.WindupSec;
             for (int i = 0; i < skill.ActivePhases.Count - 1; i++) seconds += skill.ActivePhases[i].DurationSec;
-            drawnWater.PlayGather(new Vector2((float)fight.Player.X, (float)fight.Player.Y), fight.Player.Facing, (float)seconds);
+            drawnWater.PlayGather(new Vector2((float)player.X, (float)player.Y), player.Facing, (float)seconds);
         }
 
         /// <summary>Plays the blows the package covers; the wave and the shot keep their own art.</summary>
@@ -198,13 +209,13 @@ namespace DaKiem.Client
             }
         }
 
-        private void StartSpark(Simulation fight, BossConfig boss, in CombatEvent hit)
+        private void StartSpark(MovementState player, CombatState combat, BossState bossState, BossConfig boss, in CombatEvent hit)
         {
-            int way = fight.Boss.X >= fight.Player.X ? -1 : 1;
-            var place = new Vector2((float)fight.Boss.X + way * (float)boss.Width * 0.4f,
+            int way = bossState.X >= player.X ? -1 : 1;
+            var place = new Vector2((float)bossState.X + way * (float)boss.Width * 0.4f,
                 (float)boss.Height * 0.4f + hit.HitIndex % 2 * 0.15f);
             bool heavy = hit.Slot == SkillSlot.Ultimate && hit.HitIndex == 2
-                || hit.Slot == SkillSlot.Attack && fight.Combat.ComboStep == 2;
+                || hit.Slot == SkillSlot.Attack && combat.ComboStep == 2;
             if (packageSlash.Enabled)
             {
                 packageSlash.PlayImpact(place, heavy ? 0.9f : 0.6f);
@@ -212,10 +223,10 @@ namespace DaKiem.Client
             }
             if (drawnWater.HasHit)
             {
-                drawnWater.PlayHit(place, fight.Player.Facing, heavy);
+                drawnWater.PlayHit(place, player.Facing, heavy);
                 return;
             }
-            Play(WaterForm.Impact, place, Vector2.one * (heavy ? 1.4f : 0.9f), fight.Player.Facing,
+            Play(WaterForm.Impact, place, Vector2.one * (heavy ? 1.4f : 0.9f), player.Facing,
                 heavy ? 0.34f : 0.26f, hit.HitIndex);
         }
 

@@ -117,7 +117,7 @@ public sealed class WebSocketTests : IAsyncLifetime
         }
 
         SnapshotMessage moved = await second.ReceiveAsync<SnapshotMessage>(
-            snapshot => snapshot.Others.Any(player => player.Id == a.PlayerId && player.X > a.Self.X + 0.5f));
+            snapshot => snapshot.Others.Any(player => player.Id == a.PlayerId && player.X > a.Self.Movement.X + 0.5f));
         Assert.NotEqual(a.PlayerId, b.PlayerId);
 
         float seenX = moved.Others.Single(player => player.Id == a.PlayerId).X;
@@ -134,7 +134,7 @@ public sealed class WebSocketTests : IAsyncLifetime
         Assert.True(resumed.Resumed);
         Assert.Equal(a.PlayerId, resumed.PlayerId);
         Assert.Equal(a.ChannelId, resumed.ChannelId);
-        Assert.True(resumed.Self.X >= seenX);
+        Assert.True(resumed.Self.Movement.X >= seenX);
         Assert.Equal(15u, resumed.LastInputSequence);
 
         await second.ReceiveAsync<SnapshotMessage>(

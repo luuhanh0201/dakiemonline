@@ -57,6 +57,32 @@ public class InterpolationTests
     }
 
     [Fact]
+    public void CastKeepsRunningBetweenSnapshots()
+    {
+        var track = new RemoteTrack();
+        track.Add(10u, new RemotePlayer(1, 0f, 0f, 1, RemoteFlags.Grounded, Game.Rules.SkillSlot.Attack, 2, 1, 1));
+        track.Add(12u, new RemotePlayer(1, 0f, 0f, 1, RemoteFlags.Grounded, Game.Rules.SkillSlot.Attack, 4, 1, 1));
+
+        Assert.Equal(3, track.Sample(11d).CastTicks);
+        Assert.Equal(Game.Rules.SkillSlot.Attack, track.Sample(11d).Casting);
+        Assert.Equal(1, track.Sample(11d).ComboStep);
+        Assert.Equal(6, track.Sample(14d).CastTicks);
+    }
+
+    [Fact]
+    public void ANewCastStartsFromItsOwnTicks()
+    {
+        var track = new RemoteTrack();
+        track.Add(10u, new RemotePlayer(1, 0f, 0f, 1, RemoteFlags.Grounded, Game.Rules.SkillSlot.Attack, 12, 0, 1));
+        track.Add(12u, new RemotePlayer(1, 0f, 0f, 1, RemoteFlags.Grounded, Game.Rules.SkillSlot.Ranged, 1, 0, 1));
+
+        Assert.Equal(12, track.Sample(10.6d).CastTicks);
+        Assert.Equal(Game.Rules.SkillSlot.Attack, track.Sample(10.6d).Casting);
+        Assert.Equal(Game.Rules.SkillSlot.Ranged, track.Sample(11.6d).Casting);
+        Assert.Equal(1, track.Sample(11.6d).CastTicks);
+    }
+
+    [Fact]
     public void ClockStartsAtTheFirstSnapshotAndRuns()
     {
         var clock = new ServerClock();
