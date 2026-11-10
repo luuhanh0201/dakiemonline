@@ -1,6 +1,6 @@
 # Dạ Kiếm Online
 
-Phạm vi hiện tại: mốc 0.5, bản thử Android không có mạng.
+Phạm vi hiện tại: mốc 1, mạng (T024–T034): server .NET qua WebSocket, Android/PC/web cùng vào, chỉ đồng bộ di chuyển. Kế hoạch: docs/KE-HOACH-MOC-1.md. T003, T012, T023 của mốc 0.5 tạm hoãn.
 
 ## Quy tắc
 - Làm đúng đầu việc, không thêm tính năng ngoài đặc tả.

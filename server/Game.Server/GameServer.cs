@@ -1,0 +1,117 @@
+using System.Security.Cryptography;
+using Game.Net;
+using Game.Rules;
+
+namespace Game.Server;
+
+/// <summary>All channels of one map in one process. Sends each new connection to a channel and back again on reconnect.</summary>
+public sealed class GameServer
+{
+    private readonly object gate = new();
+    private readonly Dictionary<string, Session> sessionsByToken = new();
+    private readonly Dictionary<int, Session> sessionsById = new();
+    private readonly Dictionary<int, int> occupancy = new();
+    private int nextPlayerId;
+
+    public GameServer(GameConfig config, ServerConfig server)
+    {
+        Config = config;
+        Server = server;
+        Runners = Enumerable.Range(1, server.Channels)
+            .Select(id => new ChannelRunner(id, config, server))
+            .ToList();
+
+        foreach (ChannelRunner runner in Runners)
+        {
+            occupancy[runner.Id] = 0;
+            runner.PlayerRemoved += playerId => Forget(runner, playerId);
+        }
+    }
+
+    public GameConfig Config { get; }
+    public ServerConfig Server { get; }
+    public IReadOnlyList<ChannelRunner> Runners { get; }
+
+    public int SessionCount
+    {
+        get
+        {
+            lock (gate)
+            {
+                return sessionsById.Count;
+            }
+        }
+    }
+
+    public IReadOnlyList<Thread> Start(CancellationToken stop) => Runners.Select(runner => runner.Start(stop)).ToList();
+
+    /// <summary>Handles Hello and returns the session the connection now speaks for, or null if refused.</summary>
+    public Session? Hello(HelloMessage hello, IConnection connection)
+    {
+        if (hello.ProtocolVersion != Packet.ProtocolVersion)
+        {
+            Refuse(connection, RejectReason.VersionMismatch);
+            return null;
+        }
+
+        lock (gate)
+        {
+            if (hello.ResumeToken.Length > 0
+                && sessionsByToken.TryGetValue(Convert.ToHexString(hello.ResumeToken), out Session? existing))
+            {
+                existing.Runner.Resume(existing, connection);
+                return existing;
+            }
+
+            ChannelRunner? runner = Runners
+                .Where(candidate => occupancy[candidate.Id] < Server.PlayersPerChannel)
+                .OrderBy(candidate => candidate.Id)
+                .FirstOrDefault();
+
+            if (runner == null)
+            {
+                Refuse(connection, RejectReason.ServerFull);
+                return null;
+            }
+
+            var session = new Session(++nextPlayerId, RandomNumberGenerator.GetBytes(Packet.TokenSize), runner);
+            sessionsByToken[Convert.ToHexString(session.Token)] = session;
+            sessionsById[session.PlayerId] = session;
+            occupancy[runner.Id]++;
+            runner.Join(session, connection);
+            return session;
+        }
+    }
+
+    /// <summary>Answers a Ping at once, without waiting for a tick, so it measures only the network.</summary>
+    public static void Ping(PingMessage ping, Session session, IConnection connection)
+    {
+        connection.Send(Packet.Encode(new PongMessage(ping.ClientTimeMs, session.Runner.CurrentTick)));
+    }
+
+    public static void Refuse(IConnection connection, RejectReason reason)
+    {
+        connection.Send(Packet.Encode(new RejectMessage(reason)));
+        connection.Close();
+    }
+
+    public IReadOnlyDictionary<int, int> Occupancy()
+    {
+        lock (gate)
+        {
+            return new Dictionary<int, int>(occupancy);
+        }
+    }
+
+    private void Forget(ChannelRunner runner, int playerId)
+    {
+        lock (gate)
+        {
+            if (sessionsById.Remove(playerId, out Session? session))
+            {
+                sessionsByToken.Remove(Convert.ToHexString(session.Token));
+                occupancy[runner.Id]--;
+            }
+        }
+    }
+}

@@ -335,6 +335,14 @@ namespace DaKiem.Client
             target.CopyTo(current, 0);
         }
 
+        /// <summary>Removes the figure, for another player leaving the channel.</summary>
+        public void Destroy()
+        {
+            Object.Destroy(root.gameObject);
+            Object.Destroy(shadow.gameObject);
+            Object.Destroy(partMaterial);
+        }
+
         /// <summary>Holds the pose for a moment once a blow has landed, longer for a finisher.</summary>
         public void ShowImpact(bool finisher)
         {

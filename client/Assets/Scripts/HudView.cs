@@ -133,6 +133,12 @@ namespace DaKiem.Client
             SetFill(bossHealthFill, BossBarWidthDp, health);
         }
 
+        /// <summary>Online there is no boss yet, so its bar is hidden.</summary>
+        public void ShowBossBar(bool visible)
+        {
+            bossHealthFill.parent.gameObject.SetActive(visible);
+        }
+
         /// <summary>Draws the HUD through a camera at a set scale, for the review tools.</summary>
         public void DrawThrough(Camera camera, float scale)
         {

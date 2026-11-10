@@ -34,6 +34,17 @@ namespace Game.Rules
                 character.MaxEnergy,
                 resources.Energy + character.EnergyRegenPerSec * Ticks.DeltaSeconds);
 
+            RegenStamina(movement, intent, attacking, character, config);
+        }
+
+        /// <summary>The stamina half of <see cref="Step"/>, for players who only move.</summary>
+        public static void RegenStamina(
+            MovementState movement,
+            in MovementIntent intent,
+            bool attacking,
+            CharacterConfig character,
+            MovementConfig config)
+        {
             if (movement.StaminaDelayTicks > 0)
             {
                 movement.StaminaDelayTicks--;

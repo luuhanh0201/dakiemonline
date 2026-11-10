@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "id": "server.default",
+  "status": "THU",
+  "source": "KE-HOACH-MOC-1; 20 nguoi moi kenh theo GDD 1.3, cac so con lai la de xuat",
+  "channels": 2,
+  "playersPerChannel": 20,
+  "spawnX": 5,
+  "snapshotEveryTicks": 2,
+  "reconnectHoldSec": 30,
+  "maxQueuedInputs": 6
+}

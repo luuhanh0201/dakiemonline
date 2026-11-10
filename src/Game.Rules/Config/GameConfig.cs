@@ -14,6 +14,7 @@ namespace Game.Rules
         public const string SkillsFile = "skills.thuy.json";
         public const string ItemsFile = "items.json";
         public const string BossFile = "boss.json";
+        public const string ServerFile = "server.json";
 
         private const int SupportedVersion = 1;
         private const decimal WholePercent = 100m;
@@ -91,6 +92,25 @@ namespace Game.Rules
         }
 
         public SkillConfig Skill(SkillSlot slot) => Skills.First(skill => skill.Slot == slot);
+
+        /// <summary>Reads <see cref="ServerFile"/>. Only the server needs it, so it is not in <see cref="FileNames"/>.</summary>
+        public static ServerConfig ParseServer(string json)
+        {
+            ConfigObject root = Open(new Dictionary<string, string> { [ServerFile] = json }, ServerFile);
+            var config = new ServerConfig
+            {
+                Channels = PositiveInt(root, "channels"),
+                PlayersPerChannel = PositiveInt(root, "playersPerChannel"),
+                SpawnX = root.Double("spawnX"),
+                SnapshotEveryTicks = PositiveInt(root, "snapshotEveryTicks"),
+                ReconnectHoldSec = root.NotNegative("reconnectHoldSec"),
+                MaxQueuedInputs = PositiveInt(root, "maxQueuedInputs"),
+            };
+
+            ReadEntry(root, config);
+            root.RejectUnknownFields();
+            return config;
+        }
 
         private static ConfigObject Open(IReadOnlyDictionary<string, string> files, string name)
         {

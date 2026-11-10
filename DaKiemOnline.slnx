@@ -1,8 +1,13 @@
 <Solution>
+  <Folder Name="/server/">
+    <Project Path="server/Game.Server/Game.Server.csproj" />
+  </Folder>
   <Folder Name="/src/">
+    <Project Path="src/Game.Net/Game.Net.csproj" />
     <Project Path="src/Game.Rules/Game.Rules.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Game.Net.Tests/Game.Net.Tests.csproj" />
     <Project Path="tests/Game.Rules.Tests/Game.Rules.Tests.csproj" />
   </Folder>
 </Solution>

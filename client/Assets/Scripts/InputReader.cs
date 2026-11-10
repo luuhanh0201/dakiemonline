@@ -1,6 +1,6 @@
 using Game.Rules;
 using UnityEngine;
-#if UNITY_STANDALONE
+#if UNITY_STANDALONE || UNITY_WEBGL
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.Controls;
 #endif
@@ -15,7 +15,7 @@ namespace DaKiem.Client
     {
         private const float DeadZone = 0.1f;
         private const int NoFinger = -1;
-#if UNITY_STANDALONE
+#if UNITY_STANDALONE || UNITY_WEBGL
         private const double KeyboardWalkTilt = 0.3d;
 #endif
 
@@ -26,7 +26,7 @@ namespace DaKiem.Client
         private bool potionPressed;
         private SkillSlot? skillPressed;
         private bool replayPressed;
-#if UNITY_STANDALONE
+#if UNITY_STANDALONE || UNITY_WEBGL
         private GearSlot? gearPressed;
         private bool slashStylePressed;
         private bool bossHoldPressed;
@@ -37,9 +37,13 @@ namespace DaKiem.Client
         {
             this.hud = hud;
             EnhancedTouchSupport.Enable();
-#if UNITY_STANDALONE
-            // Lets the mouse press the on-screen buttons and drag the joystick.
-            TouchSimulation.Enable();
+#if UNITY_STANDALONE || UNITY_WEBGL
+            // Lets the mouse press the on-screen buttons and drag the joystick. A phone browser has real
+            // touches and also fakes mouse clicks from them, which would press every button twice.
+            if (!Application.isMobilePlatform)
+            {
+                TouchSimulation.Enable();
+            }
 #endif
         }
 
@@ -66,7 +70,7 @@ namespace DaKiem.Client
                 }
             }
 
-#if UNITY_STANDALONE
+#if UNITY_STANDALONE || UNITY_WEBGL
             ReadKeyboard();
 #endif
         }
@@ -79,7 +83,7 @@ namespace DaKiem.Client
             return pressed;
         }
 
-#if UNITY_STANDALONE
+#if UNITY_STANDALONE || UNITY_WEBGL
         /// <summary>True once per press of F6, which turns cooldowns and energy costs off or on.</summary>
         public bool ConsumeFreeCastingChange()
         {
@@ -168,7 +172,7 @@ namespace DaKiem.Client
             skillPressed = HudLayout.SlotOf(button) ?? skillPressed;
         }
 
-#if UNITY_STANDALONE
+#if UNITY_STANDALONE || UNITY_WEBGL
         private void ReadKeyboard()
         {
             Keyboard keys = Keyboard.current;

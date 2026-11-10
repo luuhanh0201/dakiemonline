@@ -73,6 +73,136 @@ namespace Game.Rules
         internal int DashDirection { get; set; }
         internal int AirDashesUsed { get; set; }
         internal int StaminaDelayTicks { get; set; }
+
+        public static MovementState FromSnapshot(in MovementSnapshot snapshot)
+        {
+            var state = new MovementState(snapshot.X, snapshot.Y, snapshot.Stamina);
+            state.Restore(snapshot);
+            return state;
+        }
+
+        /// <summary>Everything the next tick depends on, so another machine can carry on from here.</summary>
+        public MovementSnapshot Capture()
+        {
+            return new MovementSnapshot(
+                X,
+                Y,
+                VelocityY,
+                Facing,
+                Grounded,
+                Stamina,
+                PreviousMoveY,
+                JumpBufferTicks,
+                DashBufferTicks,
+                CoyoteTicks,
+                DashTicksLeft,
+                DashDirection,
+                AirDashesUsed,
+                StaminaDelayTicks);
+        }
+
+        public void Restore(in MovementSnapshot snapshot)
+        {
+            X = snapshot.X;
+            Y = snapshot.Y;
+            VelocityY = snapshot.VelocityY;
+            Facing = snapshot.Facing;
+            Grounded = snapshot.Grounded;
+            Stamina = snapshot.Stamina;
+            PreviousMoveY = snapshot.PreviousMoveY;
+            JumpBufferTicks = snapshot.JumpBufferTicks;
+            DashBufferTicks = snapshot.DashBufferTicks;
+            CoyoteTicks = snapshot.CoyoteTicks;
+            DashTicksLeft = snapshot.DashTicksLeft;
+            DashDirection = snapshot.DashDirection;
+            AirDashesUsed = snapshot.AirDashesUsed;
+            StaminaDelayTicks = snapshot.StaminaDelayTicks;
+        }
+    }
+
+    /// <summary>A copy of <see cref="MovementState"/>, including the timers players never see.</summary>
+    public readonly struct MovementSnapshot : IEquatable<MovementSnapshot>
+    {
+        public MovementSnapshot(
+            double x,
+            double y,
+            double velocityY,
+            int facing,
+            bool grounded,
+            double stamina,
+            double previousMoveY,
+            int jumpBufferTicks,
+            int dashBufferTicks,
+            int coyoteTicks,
+            int dashTicksLeft,
+            int dashDirection,
+            int airDashesUsed,
+            int staminaDelayTicks)
+        {
+            X = x;
+            Y = y;
+            VelocityY = velocityY;
+            Facing = facing;
+            Grounded = grounded;
+            Stamina = stamina;
+            PreviousMoveY = previousMoveY;
+            JumpBufferTicks = jumpBufferTicks;
+            DashBufferTicks = dashBufferTicks;
+            CoyoteTicks = coyoteTicks;
+            DashTicksLeft = dashTicksLeft;
+            DashDirection = dashDirection;
+            AirDashesUsed = airDashesUsed;
+            StaminaDelayTicks = staminaDelayTicks;
+        }
+
+        public double X { get; }
+        public double Y { get; }
+        public double VelocityY { get; }
+        public int Facing { get; }
+        public bool Grounded { get; }
+        public double Stamina { get; }
+        public double PreviousMoveY { get; }
+        public int JumpBufferTicks { get; }
+        public int DashBufferTicks { get; }
+        public int CoyoteTicks { get; }
+        public int DashTicksLeft { get; }
+        public int DashDirection { get; }
+        public int AirDashesUsed { get; }
+        public int StaminaDelayTicks { get; }
+        public bool IsDashing => DashTicksLeft > 0;
+
+        public bool Equals(MovementSnapshot other)
+        {
+            return X == other.X
+                && Y == other.Y
+                && VelocityY == other.VelocityY
+                && Facing == other.Facing
+                && Grounded == other.Grounded
+                && Stamina == other.Stamina
+                && PreviousMoveY == other.PreviousMoveY
+                && JumpBufferTicks == other.JumpBufferTicks
+                && DashBufferTicks == other.DashBufferTicks
+                && CoyoteTicks == other.CoyoteTicks
+                && DashTicksLeft == other.DashTicksLeft
+                && DashDirection == other.DashDirection
+                && AirDashesUsed == other.AirDashesUsed
+                && StaminaDelayTicks == other.StaminaDelayTicks;
+        }
+
+        public override bool Equals(object? obj) => obj is MovementSnapshot other && Equals(other);
+
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                int hash = X.GetHashCode();
+                hash = hash * 31 + Y.GetHashCode();
+                hash = hash * 31 + VelocityY.GetHashCode();
+                hash = hash * 31 + Stamina.GetHashCode();
+                hash = hash * 31 + DashTicksLeft;
+                return hash;
+            }
+        }
     }
 
     public static class Movement

@@ -1,6 +1,8 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
+using DaKiem.Client.Net;
+using Game.Net;
 using Game.Rules;
 using UnityEngine;
 
@@ -28,6 +30,13 @@ namespace DaKiem.Client
         private float currentBossX;
         private float accumulator;
         private float nextSystemBarCheck;
+        private string serverAddress;
+        private string menuError;
+        private OnlineClient online;
+        private OnlineView onlineView;
+
+        private const string ServerAddressKey = "server.address";
+        private const string ServerAddressFile = "server-address.txt";
 
 #if UNITY_STANDALONE
         // The PC build is for trying things out, so the boss starts held; F5 lets it fight.
@@ -76,13 +85,38 @@ namespace DaKiem.Client
             input = new InputReader(hud);
             view = new WorldView(config.MapBoxes);
             character = new CharacterView();
-            bossView = new BossView();
-            fx = new FxView(view);
-            StartFight();
+            hud.ShowBossBar(false);
+            serverAddress = PlayerPrefs.GetString(ServerAddressKey, DefaultServerAddress());
+
+#if !UNITY_WEBGL || UNITY_EDITOR
+            // A tunnel address is long to type on a phone, so it can be pushed with adb instead:
+            // adb push server-address.txt /sdcard/Android/data/com.dakiemonline.game/files/
+            string addressFile = System.IO.Path.Combine(Application.persistentDataPath, ServerAddressFile);
+
+            if (System.IO.File.Exists(addressFile))
+            {
+                serverAddress = System.IO.File.ReadAllText(addressFile).Trim();
+            }
+#endif
+
+#if UNITY_STANDALONE
+            // "-join host:port" skips the menu, so several windows can be started from a script.
+            string[] args = System.Environment.GetCommandLineArgs();
+            int join = System.Array.IndexOf(args, "-join");
+
+            if (join >= 0 && join + 1 < args.Length)
+            {
+                serverAddress = args[join + 1];
+                JoinServer();
+            }
+#endif
         }
 
         private void StartFight()
         {
+            bossView ??= new BossView();
+            fx ??= new FxView(view);
+            hud.ShowBossBar(true);
             fight = new Simulation(config, StartX) { BossHeld = bossHeld, FreeCasting = freeCasting };
             previousFeet = currentFeet = ReadFeet();
             previousBossX = currentBossX = (float)fight.Boss.X;
@@ -96,6 +130,12 @@ namespace DaKiem.Client
             {
                 nextSystemBarCheck = Time.unscaledTime + SystemBarCheckSeconds;
                 AndroidImmersive.Apply();
+            }
+
+            if (online != null)
+            {
+                UpdateOnline();
+                return;
             }
 
             if (fight == null)
@@ -240,6 +280,170 @@ namespace DaKiem.Client
                 GUI.Label(new Rect(0f, 0f, Screen.width, Screen.height), configError, style);
                 return;
             }
+
+            if (online != null)
+            {
+                DrawOnline(style);
+            }
+            else if (fight == null && config != null)
+            {
+                DrawMenu(style);
+            }
+        }
+
+        private static string DefaultServerAddress()
+        {
+#if UNITY_WEBGL && !UNITY_EDITOR
+            // The server hands out the web build too, so the page's own address is the server.
+            return new System.Uri(Application.absoluteURL).GetLeftPart(System.UriPartial.Authority);
+#else
+            return "127.0.0.1:7777";
+#endif
+        }
+
+        private void DrawMenu(GUIStyle style)
+        {
+            float unit = Screen.height / 12f;
+            float width = Mathf.Min(Screen.width * 0.6f, unit * 12f);
+            float left = (Screen.width - width) / 2f;
+            var field = new GUIStyle(GUI.skin.textField) { fontSize = style.fontSize, alignment = TextAnchor.MiddleLeft };
+            var button = new GUIStyle(GUI.skin.button) { fontSize = style.fontSize };
+
+            GUI.Box(new Rect(left - unit * 0.5f, unit * 1.5f, width + unit, unit * 8f), GUIContent.none);
+            GUI.Label(new Rect(left, unit * 2f, width, unit), "Dạ Kiếm Online", style);
+
+            if (GUI.Button(new Rect(left, unit * 3.2f, width, unit * 1.2f), "Chơi một mình (đánh boss)", button))
+            {
+                StartFight();
+            }
+
+            GUI.Label(new Rect(left, unit * 5f, width, unit * 0.8f), "Địa chỉ server:", style);
+            serverAddress = GUI.TextField(new Rect(left, unit * 5.8f, width, unit), serverAddress ?? string.Empty, field);
+
+            if (menuError != null)
+            {
+                var error = new GUIStyle(style) { fontSize = style.fontSize * 2 / 3, wordWrap = true, normal = { textColor = new Color(1f, 0.75f, 0.6f) } };
+                GUI.Label(new Rect(left, unit * 8.3f, width, unit * 1.2f), menuError, error);
+            }
+
+            if (GUI.Button(new Rect(left, unit * 7f, width, unit * 1.2f), "Vào server", button))
+            {
+                JoinServer();
+            }
+        }
+
+        private void JoinServer()
+        {
+            string url;
+
+            try
+            {
+                url = NetTransport.NormalizeUrl(serverAddress);
+            }
+            catch (System.UriFormatException)
+            {
+                menuError = $"Địa chỉ không hợp lệ: {serverAddress}";
+                return;
+            }
+
+            PlayerPrefs.SetString(ServerAddressKey, serverAddress);
+            PlayerPrefs.Save();
+            menuError = null;
+            online = new OnlineClient(url, config);
+            online.RoundTrip += milliseconds => NetLog.Write(online, milliseconds);
+            onlineView = new OnlineView(online, character, view);
+            accumulator = 0f;
+        }
+
+        private void LeaveServer(string reason)
+        {
+            online.Quit();
+            online.Dispose();
+            onlineView.Clear();
+            online = null;
+            onlineView = null;
+            menuError = reason;
+        }
+
+        private void UpdateOnline()
+        {
+            input.Update();
+            input.ConsumeCombat();
+            input.ConsumeReplay();
+            float frame = Mathf.Min(Time.unscaledDeltaTime, MaxFrameSeconds);
+            online.Update(frame);
+            onlineView.SmoothCorrection();
+
+#if UNITY_STANDALONE
+            if (UnityEngine.InputSystem.Keyboard.current?.f8Key.wasPressedThisFrame == true)
+            {
+                online.SimulateDrop();
+            }
+#endif
+
+            if (online.Status == OnlineStatus.Failed)
+            {
+                LeaveServer(online.Message);
+                return;
+            }
+
+            accumulator += frame;
+
+            while (accumulator >= Ticks.DeltaSeconds)
+            {
+                online.Tick(input.MoveX, input.MoveY, input.ConsumeDash());
+                onlineView.AfterTick();
+                accumulator -= (float)Ticks.DeltaSeconds;
+            }
+
+            onlineView.Show(accumulator / (float)Ticks.DeltaSeconds, frame);
+
+            if (online.Predictor != null)
+            {
+                hud.ShowResources(1f, 1f, (float)(online.Predictor.State.Stamina / config.Character.MaxStamina));
+            }
+
+            foreach (HudButtonSpec spec in HudLayout.Buttons)
+            {
+                if (spec.Button != HudButton.Dash)
+                {
+                    hud.SetButton(spec.Button, spec.Label, true);
+                    hud.SetCooldown(spec.Button, 0f);
+                }
+            }
+        }
+
+        private void DrawOnline(GUIStyle style)
+        {
+            var small = new GUIStyle(style) { fontSize = style.fontSize * 2 / 3, alignment = TextAnchor.UpperCenter };
+            var shadow = new GUIStyle(small) { normal = { textColor = Color.black } };
+            LatencyStats latency = online.Latency;
+            string status = online.Status == OnlineStatus.Playing
+                ? $"Kênh {online.ChannelId} · P{online.PlayerId} · {online.Present.Count + 1} người · ping {online.LastRoundTripMs:0} ms (TB {latency.Mean:0}, p95 {latency.Percentile(95d):0}, {latency.Count} lần)"
+                : online.Message;
+
+            if (online.Status == OnlineStatus.Playing && online.Message.Length > 0)
+            {
+                status += "\n" + online.Message;
+            }
+
+            var line = new Rect(0f, Screen.height * 0.11f, Screen.width, Screen.height * 0.2f);
+            GUI.Label(new Rect(line.x + 1f, line.y + 1f, line.width, line.height), status, shadow);
+            GUI.Label(line, status, small);
+            onlineView.DrawLabels(new GUIStyle(small) { alignment = TextAnchor.MiddleCenter });
+
+            float unit = Screen.height / 12f;
+            var button = new GUIStyle(GUI.skin.button) { fontSize = small.fontSize };
+
+            if (GUI.Button(new Rect(Screen.width - unit * 3.2f, unit * 0.2f, unit * 3f, unit * 0.9f), "Thoát", button))
+            {
+                LeaveServer(null);
+            }
+        }
+
+        private void OnApplicationQuit()
+        {
+            online?.Quit();
         }
 
         private Vector2 ReadFeet()
