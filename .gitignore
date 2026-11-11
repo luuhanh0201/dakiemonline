@@ -34,3 +34,6 @@ client/Assets/Plugins/Game.Rules/*.dll
 # Asset Store packages: their licence forbids sharing the files
 client/Assets/Resources/ThirdParty/
 client/Assets/Resources/ThirdParty.meta
+
+# Local connection settings with the database password; never commit
+appsettings.Local.json

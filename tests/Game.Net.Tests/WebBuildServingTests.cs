@@ -20,7 +20,7 @@ public sealed class WebBuildServingTests : IAsyncLifetime
         await File.WriteAllBytesAsync(Path.Combine(webDir, "Build", "Web.framework.js.gz"), new byte[] { 0x1f, 0x8b, 8, 0 });
         await File.WriteAllBytesAsync(Path.Combine(webDir, "Build", "Web.data.gz"), new byte[] { 0x1f, 0x8b, 8, 0 });
 
-        app = ServerApp.Build(new[] { "--urls", "http://127.0.0.1:0", "--config", TestConfig.Dir, "--web", webDir });
+        app = ServerApp.Build(new[] { "--urls", "http://127.0.0.1:0", "--config", TestConfig.Dir, "--web", webDir, "--db", "memory" });
         await app.StartAsync();
         string address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First();
         http = new HttpClient(new HttpClientHandler { AutomaticDecompression = System.Net.DecompressionMethods.None })

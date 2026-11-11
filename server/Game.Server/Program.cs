@@ -1,11 +1,13 @@
 using System.Text.Json;
 using Game.Rules;
 using Game.Server;
+using Game.Server.Db;
+using Npgsql;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Extensions.FileProviders;
 
 // Usage: dotnet run --project server/Game.Server -- [--urls http://0.0.0.0:7777] [--config <dir>]
-//        [--web <dir with the WebGL build>] [--fake-latency-ms 75]
+//        [--web <dir with the WebGL build>] [--fake-latency-ms 75] [--db <connection string> | memory] [--db-schema dakiem]
 WebApplication app = ServerApp.Build(args);
 app.Run();
 
@@ -29,8 +31,14 @@ public static class ServerApp
         TimeSpan fakeDelay = TimeSpan.FromMilliseconds(double.Parse(builder.Configuration["fake-latency-ms"] ?? "0"));
 
         builder.Services.AddSingleton(new GameServer(config, serverConfig));
+        DatabaseInfo database = AddDatabase(builder, args);
         WebApplication app = builder.Build();
         GameServer server = app.Services.GetRequiredService<GameServer>();
+        ICharacterStore characters = app.Services.GetRequiredService<ICharacterStore>();
+        app.Logger.LogInformation(
+            "Characters are kept in {Kind}{Where}",
+            characters.Kind,
+            database.Schema == null ? " only while the server runs" : $", schema {database.Schema} at version {database.Version}");
         server.Start(app.Lifetime.ApplicationStopping);
         app.Logger.LogInformation(
             "{Channels} channels, {Players} players each, map {Map}, fake latency {Delay} ms each way",
@@ -55,7 +63,7 @@ public static class ServerApp
             await connection.RunAsync(context.RequestAborted);
         });
 
-        app.MapGet("/status", () => Results.Json(new
+        app.MapGet("/status", async (CancellationToken cancel) => Results.Json(new
         {
             players = server.SessionCount,
             channels = server.Runners.Select(runner => new
@@ -64,9 +72,52 @@ public static class ServerApp
                 tick = runner.CurrentTick,
                 players = server.Occupancy()[runner.Id],
             }),
+            database = new
+            {
+                kind = characters.Kind,
+                schema = database.Schema,
+                version = database.Version,
+                characters = await characters.CountAsync(cancel),
+            },
         }, new JsonSerializerOptions { WriteIndented = true }));
 
         return app;
+    }
+
+    /// <summary>Where characters are kept, as /status reports it. A null schema means memory only.</summary>
+    private sealed record DatabaseInfo(string? Schema, int Version);
+
+    /// <summary>
+    /// With a connection string, the schema is brought up to date before the server opens, and a
+    /// database that cannot be reached stops it: better than playing for hours and losing it all.
+    /// Without one, characters live in memory and a warning says so.
+    /// </summary>
+    private static DatabaseInfo AddDatabase(WebApplicationBuilder builder, string[] args)
+    {
+        string? localSettings = Database.FindLocalSettings();
+
+        if (localSettings != null)
+        {
+            builder.Configuration.AddJsonFile(localSettings, optional: true, reloadOnChange: false);
+        }
+
+        // Command-line values win over the local file, so a test can point the server elsewhere.
+        builder.Configuration.AddCommandLine(args);
+        string? connectionString = Database.ConnectionString(builder.Configuration);
+
+        if (connectionString == null)
+        {
+            Console.WriteLine($"No database (--db memory, or none in --db, DAKIEM_DB or \"db\" in {Database.LocalSettingsFile}); characters are kept in memory only.");
+            builder.Services.AddSingleton<ICharacterStore, InMemoryCharacterStore>();
+            return new DatabaseInfo(null, 0);
+        }
+
+        string schema = builder.Configuration["db-schema"] ?? Database.DefaultSchema;
+        NpgsqlDataSource source = Database.CreateSource(connectionString);
+        (ICharacterStore store, int version) = Database.OpenAsync(source, schema).GetAwaiter().GetResult();
+        builder.Services.AddSingleton(source);
+        builder.Services.AddSingleton(store);
+        return new DatabaseInfo(schema, version);
     }
 
     /// <summary>The WebGL build, served from the same address so the page can reach /ws without CORS.</summary>

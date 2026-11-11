@@ -17,7 +17,7 @@ public sealed class WebSocketTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        app = ServerApp.Build(new[] { "--urls", "http://127.0.0.1:0", "--config", TestConfig.Dir, "--web", "no-web-build" });
+        app = ServerApp.Build(new[] { "--urls", "http://127.0.0.1:0", "--config", TestConfig.Dir, "--web", "no-web-build", "--db", "memory" });
         await app.StartAsync();
         string address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First();
         baseUri = new Uri(address);
@@ -180,5 +180,6 @@ public sealed class WebSocketTests : IAsyncLifetime
 
         Assert.Contains("\"channels\"", status);
         Assert.Contains("\"players\": 1", status);
+        Assert.Contains("\"kind\": \"memory\"", status);
     }
 }
