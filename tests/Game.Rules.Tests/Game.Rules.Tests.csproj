@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Game.Rules\Game.Rules.csproj" />
+    <ProjectReference Include="..\..\tools\Game.BuildTest\Game.BuildTest.csproj" />
   </ItemGroup>
 
   <ItemGroup>

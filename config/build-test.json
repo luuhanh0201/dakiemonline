@@ -1,0 +1,217 @@
+{
+  "version": 1,
+  "id": "build_test.thu",
+  "status": "THU",
+  "source": "GDD 18.3; docs/T039-T040-CAN-CHOT.md bang C, ban cho tam giu 11/11/2026, sua theo huong B (nguong 5%, them bai 10 va 180 giay) va do them (50.000 TN, build cuc doan, bai tru don) cung ngay; cac build mau la de xuat cua tro ly, nguoi choi tu cong nen sua tuy y",
+  "trials": {
+    "dummies": [
+      { "id": "burst", "name": "Dồn sát thương 10 giây", "seconds": 10 },
+      { "id": "dummy", "name": "Cọc gỗ 60 giây", "seconds": 60 },
+      { "id": "endurance", "name": "Đánh bền 180 giây", "seconds": 180 }
+    ],
+    "dummyDefense": 0,
+    "minLeadPercent": 5,
+    "fightMaxSec": 120,
+    "potionBelowHpPercent": 40,
+    "healBelowHpPercent": 70,
+    "playerStartX": 5,
+    "minTrialsLedByEachBuild": 1,
+    "oneBuildMayLeadEveryTrial": false
+  },
+  "sets": [
+    {
+      "id": "set.tn20_ty_le",
+      "name": "20.000 TN, ba tỷ lệ",
+      "budgetTn": 20000,
+      "builds": [
+        {
+          "id": "build.chi_so_80",
+          "name": "80/20 chỉ số",
+          "stats": [
+            { "id": "attack", "steps": 20 },
+            { "id": "max_hp", "steps": 12 },
+            { "id": "defense", "steps": 8 },
+            { "id": "max_energy", "steps": 8 }
+          ],
+          "skills": [
+            { "id": "thuy.kiem_khi", "level": 3 },
+            { "id": "thuy.chem_tien", "level": 3 },
+            { "id": "thuy.song_kiem", "level": 3 },
+            { "id": "thuy.hoi_mau", "level": 2 },
+            { "id": "thuy.tuyet_ky", "level": 2 }
+          ]
+        },
+        {
+          "id": "build.can_bang_50",
+          "name": "50/50 cân bằng",
+          "stats": [
+            { "id": "attack", "steps": 14 },
+            { "id": "max_hp", "steps": 8 },
+            { "id": "defense", "steps": 7 },
+            { "id": "max_energy", "steps": 6 }
+          ],
+          "skills": [
+            { "id": "thuy.kiem_khi", "level": 5 },
+            { "id": "thuy.chem_tien", "level": 4 },
+            { "id": "thuy.song_kiem", "level": 4 },
+            { "id": "thuy.hoi_mau", "level": 4 },
+            { "id": "thuy.tuyet_ky", "level": 3 }
+          ]
+        },
+        {
+          "id": "build.ky_nang_80",
+          "name": "20/80 kỹ năng",
+          "stats": [
+            { "id": "attack", "steps": 7 },
+            { "id": "max_hp", "steps": 4 },
+            { "id": "defense", "steps": 3 },
+            { "id": "max_energy", "steps": 1 }
+          ],
+          "skills": [
+            { "id": "thuy.kiem_khi", "level": 6 },
+            { "id": "thuy.chem_tien", "level": 6 },
+            { "id": "thuy.song_kiem", "level": 5 },
+            { "id": "thuy.hoi_mau", "level": 5 },
+            { "id": "thuy.tuyet_ky", "level": 4 }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "set.tn20_cuc_doan",
+      "name": "20.000 TN, dồn một hướng",
+      "budgetTn": 20000,
+      "builds": [
+        {
+          "id": "build.tn20_don_cong",
+          "name": "Dồn Công",
+          "stats": [
+            { "id": "attack", "steps": 36 }
+          ],
+          "skills": []
+        },
+        {
+          "id": "build.tn20_don_trau",
+          "name": "Dồn trâu",
+          "stats": [
+            { "id": "max_hp", "steps": 24 },
+            { "id": "defense", "steps": 23 }
+          ],
+          "skills": []
+        },
+        {
+          "id": "build.tn20_don_ky_nang",
+          "name": "Dồn kỹ năng",
+          "stats": [
+            { "id": "attack", "steps": 5 }
+          ],
+          "skills": [
+            { "id": "thuy.kiem_khi", "level": 6 },
+            { "id": "thuy.chem_tien", "level": 6 },
+            { "id": "thuy.song_kiem", "level": 6 },
+            { "id": "thuy.hoi_mau", "level": 6 },
+            { "id": "thuy.tuyet_ky", "level": 4 }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "set.tn50_ty_le",
+      "name": "50.000 TN, ba tỷ lệ",
+      "budgetTn": 50000,
+      "builds": [
+        {
+          "id": "build.tn50_chi_so_80",
+          "name": "80/20 chỉ số",
+          "stats": [
+            { "id": "attack", "steps": 36 },
+            { "id": "max_hp", "steps": 23 },
+            { "id": "defense", "steps": 17 },
+            { "id": "max_energy", "steps": 16 }
+          ],
+          "skills": [
+            { "id": "thuy.kiem_khi", "level": 4 },
+            { "id": "thuy.chem_tien", "level": 4 },
+            { "id": "thuy.song_kiem", "level": 4 },
+            { "id": "thuy.hoi_mau", "level": 4 },
+            { "id": "thuy.tuyet_ky", "level": 3 }
+          ]
+        },
+        {
+          "id": "build.tn50_can_bang_50",
+          "name": "50/50 cân bằng",
+          "stats": [
+            { "id": "attack", "steps": 27 },
+            { "id": "max_hp", "steps": 17 },
+            { "id": "defense", "steps": 12 },
+            { "id": "max_energy", "steps": 11 }
+          ],
+          "skills": [
+            { "id": "thuy.kiem_khi", "level": 7 },
+            { "id": "thuy.chem_tien", "level": 7 },
+            { "id": "thuy.song_kiem", "level": 7 },
+            { "id": "thuy.hoi_mau", "level": 6 },
+            { "id": "thuy.tuyet_ky", "level": 5 }
+          ]
+        },
+        {
+          "id": "build.tn50_ky_nang_80",
+          "name": "20/80 kỹ năng",
+          "stats": [
+            { "id": "attack", "steps": 14 },
+            { "id": "max_hp", "steps": 8 },
+            { "id": "defense", "steps": 7 },
+            { "id": "max_energy", "steps": 7 }
+          ],
+          "skills": [
+            { "id": "thuy.kiem_khi", "level": 9 },
+            { "id": "thuy.chem_tien", "level": 9 },
+            { "id": "thuy.song_kiem", "level": 9 },
+            { "id": "thuy.hoi_mau", "level": 8 },
+            { "id": "thuy.tuyet_ky", "level": 6 }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "set.tn50_cuc_doan",
+      "name": "50.000 TN, dồn một hướng",
+      "budgetTn": 50000,
+      "builds": [
+        {
+          "id": "build.tn50_don_cong",
+          "name": "Dồn Công",
+          "stats": [
+            { "id": "attack", "steps": 61 },
+            { "id": "max_hp", "steps": 5 }
+          ],
+          "skills": []
+        },
+        {
+          "id": "build.tn50_don_trau",
+          "name": "Dồn trâu",
+          "stats": [
+            { "id": "attack", "steps": 3 },
+            { "id": "max_hp", "steps": 41 },
+            { "id": "defense", "steps": 41 }
+          ],
+          "skills": []
+        },
+        {
+          "id": "build.tn50_don_ky_nang",
+          "name": "Dồn kỹ năng",
+          "stats": [
+            { "id": "attack", "steps": 3 }
+          ],
+          "skills": [
+            { "id": "thuy.kiem_khi", "level": 10 },
+            { "id": "thuy.chem_tien", "level": 10 },
+            { "id": "thuy.song_kiem", "level": 10 },
+            { "id": "thuy.hoi_mau", "level": 9 },
+            { "id": "thuy.tuyet_ky", "level": 7 }
+          ]
+        }
+      ]
+    }
+  ]
+}

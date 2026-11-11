@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "id": "progression.thu",
+  "status": "THU",
+  "source": "GDD 5.2 va 8.3; docs/T039-T040-CAN-CHOT.md bang A va B, ban duyet lam so thu 11/11/2026",
+  "stats": [
+    { "id": "attack", "perStep": 1, "firstCost": 200, "costIncrease": 20 },
+    { "id": "max_hp", "perStep": 10, "firstCost": 200, "costIncrease": 20 },
+    { "id": "defense", "perStep": 1, "firstCost": 200, "costIncrease": 20 },
+    { "id": "max_energy", "perStep": 2, "firstCost": 200, "costIncrease": 20 }
+  ],
+  "skills": [
+    { "id": "thuy.kiem_khi", "maxLevel": 10, "firstCost": 400, "costIncrease": 200 },
+    { "id": "thuy.hoi_mau", "maxLevel": 10, "firstCost": 400, "costIncrease": 200 },
+    { "id": "thuy.chem_tien", "maxLevel": 10, "firstCost": 400, "costIncrease": 200 },
+    { "id": "thuy.song_kiem", "maxLevel": 10, "firstCost": 400, "costIncrease": 200 },
+    { "id": "thuy.tuyet_ky", "maxLevel": 10, "firstCost": 600, "costIncrease": 300 }
+  ]
+}

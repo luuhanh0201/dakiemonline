@@ -1,6 +1,6 @@
 # Dạ Kiếm Online
 
-Phạm vi hiện tại: mốc 2, phòng thử Thủy qua server (T035–T038): chiến đấu nhiều người và boss chạy trên server. Kế hoạch: docs/KE-HOACH-MOC-2.md. Mốc 1 đã xong (docs/KE-HOACH-MOC-1.md). T003, T012, T023 của mốc 0.5 tạm hoãn.
+Phạm vi hiện tại: mốc 2, đã xong T035–T040. T035–T038 (chiến đấu nhiều người và boss trên server): docs/KE-HOACH-MOC-2.md. T039–T040 (bảng giá kỹ năng, đo build): các điểm đã chốt ở docs/T039-T040-CAN-CHOT.md, kết quả ở docs/T040-NHAN-XET.md; đo lại bằng tools/measure-builds.ps1. Mốc 1 đã xong (docs/KE-HOACH-MOC-1.md). T003, T012, T023 của mốc 0.5 tạm hoãn.
 
 ## Quy tắc
 - Làm đúng đầu việc, không thêm tính năng ngoài đặc tả.

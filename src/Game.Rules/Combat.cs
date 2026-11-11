@@ -294,8 +294,6 @@ namespace Game.Rules
     /// <summary>One tick of a player: skills, potion, movement and resources, in that order.</summary>
     public static class Combat
     {
-        // The fixture fights at level 1; the numbers in GDD 18.1 are level 1 values.
-        private const int SkillLevel = 1;
         private const int NoPhase = -1;
 
         public static void Step(
@@ -596,7 +594,7 @@ namespace Game.Rules
             if (skill.Heal != null)
             {
                 int before = resources.Hp;
-                ResourceRules.Heal(resources, skill.Heal, config.Character);
+                ResourceRules.Heal(resources, skill.Heal, skill.LevelPercent, config.Character.LevelOf(skill.Slot), config.Character);
                 events.Add(new CombatEvent(CombatEventKind.SelfHealed, skill.Slot, resources.Hp - before));
             }
 
@@ -631,7 +629,7 @@ namespace Game.Rules
             }
 
             combat.LastHitPhase = phase;
-            int damage = SkillDamage.HitDamage(skill, phase, config.Character.Attack, SkillLevel, target.Value.Defense, combat.ComboStep);
+            int damage = SkillDamage.HitDamage(skill, phase, config.Character.Attack, config.Character.LevelOf(skill.Slot), target.Value.Defense, combat.ComboStep);
             events.Add(new CombatEvent(CombatEventKind.SkillHit, skill.Slot, damage, skill.Slow, phase));
         }
 
@@ -702,7 +700,7 @@ namespace Game.Rules
             if (target != null && path.Overlaps(target.Value.Box))
             {
                 SkillConfig skill = config.Skill(projectile.Slot);
-                int damage = SkillDamage.HitDamage(skill, 0, config.Character.Attack, SkillLevel, target.Value.Defense);
+                int damage = SkillDamage.HitDamage(skill, 0, config.Character.Attack, config.Character.LevelOf(skill.Slot), target.Value.Defense);
                 events.Add(new CombatEvent(CombatEventKind.SkillHit, skill.Slot, damage, skill.Slow));
                 return true;
             }

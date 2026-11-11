@@ -90,11 +90,31 @@ namespace Game.Rules
             resources.Hp = Math.Max(0, resources.Hp - amount);
         }
 
-        /// <summary>Heals the skill's fixed part plus a share of max health, rounded down.</summary>
+        /// <summary>Heals the skill's fixed part plus a share of max health, rounded down, at level 1.</summary>
         public static void Heal(ResourceState resources, SkillHeal heal, CharacterConfig character)
         {
-            int amount = (int)Math.Floor(heal.Base + character.MaxHp * heal.MaxHpPercent / 100m);
-            Heal(resources, amount, character);
+            Heal(resources, heal, 0m, 1, character);
+        }
+
+        /// <summary>Heals what <see cref="HealAmount"/> gives for the skill's level.</summary>
+        public static void Heal(ResourceState resources, SkillHeal heal, decimal levelPercent, int level, CharacterConfig character)
+        {
+            Heal(resources, HealAmount(heal, levelPercent, level, character.MaxHp), character);
+        }
+
+        /// <summary>
+        /// (fixed part + share of max health) × [1 + levelPercent% × (level − 1)], rounded down:
+        /// the level scales the whole heal, as it scales the whole damage of a skill.
+        /// </summary>
+        public static int HealAmount(SkillHeal heal, decimal levelPercent, int level, int maxHp)
+        {
+            if (level < 1)
+            {
+                throw new ArgumentOutOfRangeException(nameof(level), level, "Skill level starts at 1.");
+            }
+
+            decimal atLevelOne = heal.Base + maxHp * heal.MaxHpPercent / 100m;
+            return (int)Math.Floor(atLevelOne * (1m + levelPercent / 100m * (level - 1)));
         }
 
         public static void Heal(ResourceState resources, int amount, CharacterConfig character)

@@ -6,7 +6,7 @@ using System.Text.RegularExpressions;
 namespace Game.Rules
 {
     /// <summary>All config files, parsed and checked. Any problem stops loading with a clear message.</summary>
-    public sealed class GameConfig
+    public sealed partial class GameConfig
     {
         public const string CharacterFile = "character.json";
         public const string MovementFile = "movement.json";

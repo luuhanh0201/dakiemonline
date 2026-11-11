@@ -16,6 +16,20 @@ namespace Game.Rules.Tests
 
         public static GameConfig Load() => GameConfig.Parse(Files());
 
+        /// <summary>The real files with one piece of text in one of them replaced.</summary>
+        public static GameConfig LoadWith(string file, string find, string replace)
+        {
+            Dictionary<string, string> files = Files();
+
+            if (!files[file].Contains(find))
+            {
+                throw new ArgumentException($"{file} does not contain {find}", nameof(find));
+            }
+
+            files[file] = files[file].Replace(find, replace);
+            return GameConfig.Parse(files);
+        }
+
         public static MovementConfig Movement() => Load().Movement;
 
         public static CollisionMap TestMap() => new CollisionMap(Load().MapBoxes);
