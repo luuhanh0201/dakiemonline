@@ -65,11 +65,21 @@ public class PacketTests
     {
         byte[] token = Enumerable.Range(1, Packet.TokenSize).Select(value => (byte)value).ToArray();
 
-        HelloMessage hello = RoundTrip(new HelloMessage(Packet.ProtocolVersion, token));
+        HelloMessage hello = RoundTrip(new HelloMessage(Packet.ProtocolVersion, token, "phien-dang-nhap_43-ky-tu"));
 
         Assert.Equal(Packet.ProtocolVersion, hello.ProtocolVersion);
         Assert.Equal(token, hello.ResumeToken);
-        Assert.Empty(RoundTrip(new HelloMessage(7, Array.Empty<byte>())).ResumeToken);
+        Assert.Equal("phien-dang-nhap_43-ky-tu", hello.LoginToken);
+        Assert.Empty(RoundTrip(new HelloMessage(7, token, "x")).ResumeToken);
+    }
+
+    [Fact]
+    public void TextThatIsNotUtf8IsRejected()
+    {
+        byte[] hello = Packet.Encode(new HelloMessage(Packet.ProtocolVersion, Array.Empty<byte>(), "ab"));
+        hello[^1] = 0xFF;
+
+        Assert.Throws<ProtocolException>(() => Packet.Decode(hello));
     }
 
     [Fact]
@@ -78,7 +88,9 @@ public class PacketTests
         var token = new byte[Packet.TokenSize];
         token[3] = 200;
 
-        WelcomeMessage welcome = RoundTrip(new WelcomeMessage(42, 2, 123456u, true, token, 999u, true, Fighting()));
+        WelcomeMessage welcome = RoundTrip(new WelcomeMessage(42, 2, 123456u, true, token, 999u, true, Fighting(), "Thủy"));
+
+        Assert.Equal("Thủy", welcome.CharacterName);
 
         Assert.Equal(42, welcome.PlayerId);
         Assert.Equal(2, welcome.ChannelId);
@@ -94,6 +106,7 @@ public class PacketTests
     public void RejectRoundTrips()
     {
         Assert.Equal(RejectReason.ServerFull, RoundTrip(new RejectMessage(RejectReason.ServerFull)).Reason);
+        Assert.Equal(RejectReason.NoCharacter, RoundTrip(new RejectMessage(RejectReason.NoCharacter)).Reason);
     }
 
     [Theory]

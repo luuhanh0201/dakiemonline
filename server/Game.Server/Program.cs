@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Game.Rules;
 using Game.Server;
+using Game.Server.Accounts;
 using Game.Server.Db;
 using Npgsql;
 using Microsoft.AspNetCore.StaticFiles;
@@ -8,6 +9,7 @@ using Microsoft.Extensions.FileProviders;
 
 // Usage: dotnet run --project server/Game.Server -- [--urls http://0.0.0.0:7777] [--config <dir>]
 //        [--web <dir with the WebGL build>] [--fake-latency-ms 75] [--db <connection string> | memory] [--db-schema dakiem]
+//        [--password-iterations 600000]
 WebApplication app = ServerApp.Build(args);
 app.Run();
 
@@ -15,7 +17,8 @@ public static class ServerApp
 {
     public const string DefaultUrl = "http://0.0.0.0:7777";
 
-    public static WebApplication Build(string[] args)
+    /// <param name="codeSender">Where verification codes go; the server log when none is given. Tests keep them instead.</param>
+    public static WebApplication Build(string[] args, ICodeSender? codeSender = null)
     {
         WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
@@ -30,8 +33,28 @@ public static class ServerApp
         ServerConfig serverConfig = GameConfig.ParseServer(File.ReadAllText(Path.Combine(configDir, GameConfig.ServerFile)));
         TimeSpan fakeDelay = TimeSpan.FromMilliseconds(double.Parse(builder.Configuration["fake-latency-ms"] ?? "0"));
 
-        builder.Services.AddSingleton(new GameServer(config, serverConfig));
+        AccountConfig accountConfig = GameConfig.ParseAccounts(File.ReadAllText(Path.Combine(configDir, GameConfig.AccountsFile)));
+        builder.Services.AddSingleton(new GameServer(config, serverConfig, requireLogin: true));
         DatabaseInfo database = AddDatabase(builder, args);
+        int hashIterations = int.Parse(builder.Configuration["password-iterations"] ?? PasswordHasher.DefaultIterations.ToString());
+        builder.Services.AddSingleton(new PasswordHasher(hashIterations));
+        if (codeSender == null)
+        {
+            builder.Services.AddSingleton<ICodeSender, LogCodeSender>();
+        }
+        else
+        {
+            builder.Services.AddSingleton(codeSender);
+        }
+        builder.Services.AddSingleton(TimeProvider.System);
+        builder.Services.AddSingleton(services => new AccountService(
+            services.GetRequiredService<IAccountStore>(),
+            services.GetRequiredService<ICharacterStore>(),
+            accountConfig,
+            serverConfig,
+            services.GetRequiredService<PasswordHasher>(),
+            services.GetRequiredService<ICodeSender>(),
+            services.GetRequiredService<TimeProvider>()));
         WebApplication app = builder.Build();
         GameServer server = app.Services.GetRequiredService<GameServer>();
         ICharacterStore characters = app.Services.GetRequiredService<ICharacterStore>();
@@ -59,11 +82,13 @@ public static class ServerApp
             }
 
             using var socket = await context.WebSockets.AcceptWebSocketAsync();
-            var connection = new WebSocketConnection(socket, server, app.Logger, fakeDelay);
+            var connection = new WebSocketConnection(socket, server, app.Logger, fakeDelay, app.Services.GetRequiredService<AccountService>());
             await connection.RunAsync(context.RequestAborted);
         });
 
-        app.MapGet("/status", async (CancellationToken cancel) => Results.Json(new
+        AccountApi.Map(app);
+
+        app.MapGet("/status",async (CancellationToken cancel) => Results.Json(new
         {
             players = server.SessionCount,
             channels = server.Runners.Select(runner => new
@@ -107,8 +132,9 @@ public static class ServerApp
 
         if (connectionString == null)
         {
-            Console.WriteLine($"No database (--db memory, or none in --db, DAKIEM_DB or \"db\" in {Database.LocalSettingsFile}); characters are kept in memory only.");
+            Console.WriteLine($"No database (--db memory, or none in --db, DAKIEM_DB or \"db\" in {Database.LocalSettingsFile}); accounts and characters are kept in memory only.");
             builder.Services.AddSingleton<ICharacterStore, InMemoryCharacterStore>();
+            builder.Services.AddSingleton<IAccountStore, InMemoryAccountStore>();
             return new DatabaseInfo(null, 0);
         }
 
@@ -117,6 +143,7 @@ public static class ServerApp
         (ICharacterStore store, int version) = Database.OpenAsync(source, schema).GetAwaiter().GetResult();
         builder.Services.AddSingleton(source);
         builder.Services.AddSingleton(store);
+        builder.Services.AddSingleton(Database.Accounts(source, schema));
         return new DatabaseInfo(schema, version);
     }
 

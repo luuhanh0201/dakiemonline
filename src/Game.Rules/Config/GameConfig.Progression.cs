@@ -8,6 +8,60 @@ namespace Game.Rules
     {
         public const string ProgressionFile = "progression.json";
         public const string BuildTestFile = "build-test.json";
+        public const string AccountsFile = "accounts.json";
+
+        /// <summary>Reads <see cref="AccountsFile"/>, which the server and the login screens share.</summary>
+        public static AccountConfig ParseAccounts(string json)
+        {
+            ConfigObject root = Open(new Dictionary<string, string> { [AccountsFile] = json }, AccountsFile);
+            var config = new AccountConfig
+            {
+                UsernameMinLength = PositiveInt(root, "usernameMinLength"),
+                UsernameMaxLength = PositiveInt(root, "usernameMaxLength"),
+                PasswordMinLength = PositiveInt(root, "passwordMinLength"),
+                PasswordMaxLength = PositiveInt(root, "passwordMaxLength"),
+                CharacterNameMinLength = PositiveInt(root, "characterNameMinLength"),
+                CharacterNameMaxLength = PositiveInt(root, "characterNameMaxLength"),
+                GuestPrefix = root.String("guestPrefix"),
+                GuestDigits = PositiveInt(root, "guestDigits"),
+                CodeDigits = PositiveInt(root, "codeDigits"),
+                CodeLifetimeSec = root.Positive("codeLifetimeSec"),
+                CodeMaxAttempts = PositiveInt(root, "codeMaxAttempts"),
+                CodeResendSec = root.NotNegative("codeResendSec"),
+                SessionLifetimeDays = root.Positive("sessionLifetimeDays"),
+                LoginMaxFailures = PositiveInt(root, "loginMaxFailures"),
+                LoginLockSec = root.Positive("loginLockSec"),
+                AddressMaxFailures = PositiveInt(root, "addressMaxFailures"),
+                BannedWords = root.Strings("bannedWords"),
+            };
+
+            ReadEntry(root, config);
+            root.RejectUnknownFields();
+            CheckRange(root, "usernameMaxLength", config.UsernameMinLength, config.UsernameMaxLength);
+            CheckRange(root, "passwordMaxLength", config.PasswordMinLength, config.PasswordMaxLength);
+            CheckRange(root, "characterNameMaxLength", config.CharacterNameMinLength, config.CharacterNameMaxLength);
+
+            if (config.GuestPrefix.Length + config.GuestDigits > config.UsernameMaxLength
+                || AccountRules.CheckUsername(config.GuestPrefix + new string('0', config.GuestDigits), config, guest: true) != AccountProblem.None)
+            {
+                throw root.Fail("guestPrefix", "with guestDigits it must make a valid username");
+            }
+
+            if (config.CodeDigits > 9)
+            {
+                throw root.Fail("codeDigits", "must be at most 9");
+            }
+
+            return config;
+        }
+
+        private static void CheckRange(ConfigObject root, string maxField, int min, int max)
+        {
+            if (max < min)
+            {
+                throw root.Fail(maxField, "cannot be smaller than the minimum");
+            }
+        }
 
         private const int MinMaxLevel = 2;
 

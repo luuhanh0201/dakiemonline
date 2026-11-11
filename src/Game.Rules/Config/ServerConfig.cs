@@ -3,6 +3,15 @@ namespace Game.Rules
     /// <summary>Numbers the server runs channels by. Read by <see cref="GameConfig.ParseServer"/>.</summary>
     public sealed class ServerConfig : ConfigEntry
     {
+        /// <summary>Which game server this is. A character belongs to one account on one server number.</summary>
+        public int ServerNumber { get; set; }
+
+        /// <summary>The name the server-select screen shows.</summary>
+        public string ServerName { get; set; } = string.Empty;
+
+        /// <summary>Marks the server "MỚI" on the server-select screen.</summary>
+        public bool ServerIsNew { get; set; }
+
         public int Channels { get; set; }
         public int PlayersPerChannel { get; set; }
         public double SpawnX { get; set; }

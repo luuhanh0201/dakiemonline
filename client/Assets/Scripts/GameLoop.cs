@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
+using DaKiem.Client.Accounts;
 using DaKiem.Client.Net;
 using Game.Net;
 using Game.Rules;
@@ -31,13 +32,17 @@ namespace DaKiem.Client
         private float accumulator;
         private float nextSystemBarCheck;
         private string serverAddress;
-        private string menuError;
+        private AccountScreens screens;
+        private AccountInfo playingAccount;
         private OnlineClient online;
         private OnlineView onlineView;
         private bool refillPressed;
 
         private const string ServerAddressKey = "server.address";
         private const string ServerAddressFile = "server-address.txt";
+
+        /// <summary>How the login background moves; only the client reads it, so it is not in GameConfig.</summary>
+        private const string LoginSceneFile = "login-scene.json";
 
 #if UNITY_STANDALONE
         // The PC build is for trying things out, so the boss starts held; F5 lets it fight.
@@ -53,6 +58,9 @@ namespace DaKiem.Client
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Create()
         {
+#if UNITY_STANDALONE_WIN || UNITY_EDITOR
+            if (AccountUiSmoke.Enabled) return;
+#endif
             new GameObject(nameof(GameLoop)).AddComponent<GameLoop>();
         }
 
@@ -70,10 +78,16 @@ namespace DaKiem.Client
 
             var files = new Dictionary<string, string>();
             yield return ConfigFiles.LoadAll(files);
+            yield return ConfigFiles.Load(GameConfig.AccountsFile, files);
+            yield return ConfigFiles.Load(LoginSceneFile, files);
+            AccountConfig accountRules;
 
             try
             {
                 config = GameConfig.Parse(files);
+                accountRules = GameConfig.ParseAccounts(files.TryGetValue(GameConfig.AccountsFile, out string accounts)
+                    ? accounts
+                    : throw new InvalidConfigException(GameConfig.AccountsFile, "file", "file is missing"));
             }
             catch (InvalidConfigException error)
             {
@@ -87,6 +101,7 @@ namespace DaKiem.Client
             view = new WorldView(config.MapBoxes);
             character = new CharacterView();
             hud.ShowBossBar(false);
+            hud.SetVisible(false);
             serverAddress = PlayerPrefs.GetString(ServerAddressKey, DefaultServerAddress());
 
 #if !UNITY_WEBGL || UNITY_EDITOR
@@ -100,23 +115,34 @@ namespace DaKiem.Client
             }
 #endif
 
+            bool joinNow = false;
+
 #if UNITY_STANDALONE
-            // "-join host:port" skips the menu, so several windows can be started from a script.
+            // "-join host:port" skips the menus with a new guest, so several windows can be started from a script.
             string[] args = System.Environment.GetCommandLineArgs();
             int join = System.Array.IndexOf(args, "-join");
 
             if (join >= 0 && join + 1 < args.Length)
             {
                 serverAddress = args[join + 1];
-                JoinServer();
+                joinNow = true;
             }
 #endif
+
+            files.TryGetValue(LoginSceneFile, out string scene);
+            screens = AccountScreens.Create(accountRules, LoginSceneConfig.Parse(scene), serverAddress, JoinServer, StartFight, resume: !joinNow);
+
+            if (joinNow)
+            {
+                screens.JoinAsNewGuest();
+            }
         }
 
         private void StartFight()
         {
             bossView ??= new BossView();
             fx ??= new FxView(view);
+            hud.SetVisible(true);
             hud.ShowBossBar(true);
             fight = new Simulation(config, StartX) { BossHeld = bossHeld, FreeCasting = freeCasting };
             previousFeet = currentFeet = ReadFeet();
@@ -269,6 +295,9 @@ namespace DaKiem.Client
 
         private void OnGUI()
         {
+            // The same face as the canvases, so status lines keep their marks on the web too.
+            GUI.skin.font = UiKit.Font;
+
             var style = new GUIStyle(GUI.skin.label)
             {
                 fontSize = Screen.height / 24,
@@ -285,10 +314,6 @@ namespace DaKiem.Client
             {
                 DrawOnline(style);
             }
-            else if (fight == null && config != null)
-            {
-                DrawMenu(style);
-            }
         }
 
         private static string DefaultServerAddress()
@@ -301,72 +326,40 @@ namespace DaKiem.Client
 #endif
         }
 
-        private void DrawMenu(GUIStyle style)
+        /// <summary>From the account screens, once a server and a character are chosen.</summary>
+        private void JoinServer(string url, string loginToken, AccountInfo account, string characterName)
         {
-            float unit = Screen.height / 12f;
-            float width = Mathf.Min(Screen.width * 0.6f, unit * 12f);
-            float left = (Screen.width - width) / 2f;
-            var field = new GUIStyle(GUI.skin.textField) { fontSize = style.fontSize, alignment = TextAnchor.MiddleLeft };
-            var button = new GUIStyle(GUI.skin.button) { fontSize = style.fontSize };
-
-            GUI.Box(new Rect(left - unit * 0.5f, unit * 1.5f, width + unit, unit * 8f), GUIContent.none);
-            GUI.Label(new Rect(left, unit * 2f, width, unit), "Dạ Kiếm Online", style);
-
-            if (GUI.Button(new Rect(left, unit * 3.2f, width, unit * 1.2f), "Chơi một mình (đánh boss)", button))
-            {
-                StartFight();
-            }
-
-            GUI.Label(new Rect(left, unit * 5f, width, unit * 0.8f), "Địa chỉ server:", style);
-            serverAddress = GUI.TextField(new Rect(left, unit * 5.8f, width, unit), serverAddress ?? string.Empty, field);
-
-            if (menuError != null)
-            {
-                var error = new GUIStyle(style) { fontSize = style.fontSize * 2 / 3, wordWrap = true, normal = { textColor = new Color(1f, 0.75f, 0.6f) } };
-                GUI.Label(new Rect(left, unit * 8.3f, width, unit * 1.2f), menuError, error);
-            }
-
-            if (GUI.Button(new Rect(left, unit * 7f, width, unit * 1.2f), "Vào server", button))
-            {
-                JoinServer();
-            }
-        }
-
-        private void JoinServer()
-        {
-            string url;
-
-            try
-            {
-                url = NetTransport.NormalizeUrl(serverAddress);
-            }
-            catch (System.UriFormatException)
-            {
-                menuError = $"Địa chỉ không hợp lệ: {serverAddress}";
-                return;
-            }
-
+            serverAddress = screens.Address;
             PlayerPrefs.SetString(ServerAddressKey, serverAddress);
             PlayerPrefs.Save();
-            menuError = null;
-            online = new OnlineClient(url, config);
+            playingAccount = account;
+            online = new OnlineClient(url, config, loginToken);
             online.RoundTrip += milliseconds => NetLog.Write(online, milliseconds);
             bossView ??= new BossView();
             fx ??= new FxView(view);
             onlineView = new OnlineView(online, config, character, fx, bossView, view);
+            hud.SetVisible(true);
             hud.ShowBossBar(true);
             accumulator = 0f;
+
+            // Each time a guest enters, a reminder to link the account (decided 11/11/2026).
+            if (account != null && account.IsGuest)
+            {
+                screens.ShowGuestReminderInGame();
+            }
         }
 
         private void LeaveServer(string reason)
         {
+            RejectReason? rejected = online.Rejected;
             online.Quit();
             online.Dispose();
             onlineView.Clear();
             online = null;
             onlineView = null;
             hud.ShowBossBar(false);
-            menuError = reason;
+            hud.SetVisible(false);
+            screens.ShowAfterGame(rejected, reason);
         }
 
         private void UpdateOnline()
@@ -392,9 +385,14 @@ namespace DaKiem.Client
 
             accumulator += frame;
 
+            // While an account screen is over the game, touches belong to it and the character stands still.
+            bool covered = screens.Visible;
+
             while (accumulator >= Ticks.DeltaSeconds)
             {
-                online.Tick(input.MoveX, input.MoveY, input.ConsumeDash(), input.ConsumeCombat(), refillPressed);
+                bool dash = input.ConsumeDash();
+                CombatIntent combat = input.ConsumeCombat();
+                online.Tick(covered ? 0d : input.MoveX, covered ? 0d : input.MoveY, dash && !covered, covered ? default : combat, refillPressed && !covered);
                 refillPressed = false;
                 onlineView.AfterTick();
                 accumulator -= (float)Ticks.DeltaSeconds;
@@ -420,11 +418,17 @@ namespace DaKiem.Client
 
         private void DrawOnline(GUIStyle style)
         {
+            // OnGUI draws above every canvas, so nothing of it may show while an account screen is up.
+            if (screens.Visible)
+            {
+                return;
+            }
+
             var small = new GUIStyle(style) { fontSize = style.fontSize * 2 / 3, alignment = TextAnchor.UpperCenter };
             var shadow = new GUIStyle(small) { normal = { textColor = Color.black } };
             LatencyStats latency = online.Latency;
             string status = online.Status == OnlineStatus.Playing
-                ? $"Kênh {online.ChannelId} · P{online.PlayerId} · {online.Present.Count + 1} người · ping {online.LastRoundTripMs:0} ms (TB {latency.Mean:0}, p95 {latency.Percentile(95d):0}, {latency.Count} lần)"
+                ? $"{online.CharacterName} · Kênh {online.ChannelId} · P{online.PlayerId} · {online.Present.Count + 1} người · ping {online.LastRoundTripMs:0} ms (TB {latency.Mean:0}, p95 {latency.Percentile(95d):0}, {latency.Count} lần)"
                 : online.Message;
 
             if (online.Status == OnlineStatus.Playing && online.Message.Length > 0)
@@ -444,6 +448,16 @@ namespace DaKiem.Client
             {
                 LeaveServer(null);
                 return;
+            }
+
+            // Only guests have something to link; the button goes once the account is linked.
+            AccountInfo account = screens.Account ?? playingAccount;
+
+            if (account != null
+                && account.IsGuest
+                && GUI.Button(new Rect(Screen.width - unit * 3.2f, unit * 2.4f, unit * 3f, unit * 0.9f), "Liên kết TK", button))
+            {
+                screens.ShowLinkInGame();
             }
 
             // Only the test room has a refill button; real play never shows it.

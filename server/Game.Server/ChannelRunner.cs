@@ -16,17 +16,24 @@ public interface IConnection
 /// <summary>One player's place in a channel, kept while they are away so they can come back.</summary>
 public sealed class Session
 {
-    public Session(int playerId, byte[] token, ChannelRunner runner)
+    public Session(int playerId, byte[] token, ChannelRunner runner, PlayerIdentity? identity = null)
     {
         PlayerId = playerId;
         Token = token;
         Runner = runner;
+        Identity = identity;
     }
 
     public int PlayerId { get; }
     public byte[] Token { get; }
     public ChannelRunner Runner { get; }
+
+    /// <summary>The saved character playing; null only where login is not required, as in server tests.</summary>
+    public PlayerIdentity? Identity { get; }
 }
+
+/// <summary>Which saved character a connection plays, found from its login token.</summary>
+public sealed record PlayerIdentity(long CharacterId, string Name);
 
 /// <summary>
 /// Runs one <see cref="Room"/>. Connection threads only queue commands; everything else
@@ -179,6 +186,8 @@ public sealed class ChannelRunner
 
         if (slot.Connection != null && slot.Connection != connection)
         {
+            // Still connected: the same character came in somewhere else, which takes it over.
+            slot.Connection.Send(Packet.Encode(new RejectMessage(RejectReason.LoggedInElsewhere)));
             slot.Connection.Close();
         }
 
@@ -198,7 +207,8 @@ public sealed class ChannelRunner
             slot.Session.Token,
             slot.LastSequence,
             Room.TestRoom,
-            player.Capture())));
+            player.Capture(),
+            slot.Session.Identity?.Name ?? string.Empty)));
     }
 
     private void QueueInput(int playerId, IConnection connection, InputMessage input)

@@ -1,6 +1,8 @@
 using System.Net.WebSockets;
 using System.Threading.Channels;
 using Game.Net;
+using Game.Server.Accounts;
+using Game.Server.Db;
 
 namespace Game.Server;
 
@@ -21,14 +23,17 @@ public sealed class WebSocketConnection : IConnection
     private readonly Channel<(long Due, byte[] Packet)> received =
         System.Threading.Channels.Channel.CreateUnbounded<(long, byte[])>(new UnboundedChannelOptions { SingleReader = true });
     private readonly CancellationTokenSource closing = new();
+    private readonly AccountService? accounts;
     private Session? session;
 
-    public WebSocketConnection(WebSocket socket, GameServer server, ILogger logger, TimeSpan delay)
+    /// <param name="accounts">Finds the character for a login token; without it players join without accounts.</param>
+    public WebSocketConnection(WebSocket socket, GameServer server, ILogger logger, TimeSpan delay, AccountService? accounts = null)
     {
         this.socket = socket;
         this.server = server;
         this.logger = logger;
         this.delay = delay;
+        this.accounts = accounts;
     }
 
     public void Send(byte[] packet)
@@ -112,7 +117,7 @@ public sealed class WebSocketConnection : IConnection
             {
                 await WaitUntil(due, stop);
 
-                if (!Handle(packet))
+                if (!await HandleAsync(packet, stop))
                 {
                     Close();
                     return;
@@ -125,7 +130,7 @@ public sealed class WebSocketConnection : IConnection
     }
 
     /// <summary>False when the client broke the protocol and should be dropped.</summary>
-    private bool Handle(byte[] packet)
+    private async Task<bool> HandleAsync(byte[] packet, CancellationToken stop)
     {
         NetMessage message;
 
@@ -148,13 +153,28 @@ public sealed class WebSocketConnection : IConnection
                 return false;
             }
 
-            session = server.Hello(hello, this);
+            PlayerIdentity? identity = null;
+
+            if (accounts != null && hello.ProtocolVersion == Packet.ProtocolVersion && !server.CanResume(hello.ResumeToken))
+            {
+                RejectReason? refusal;
+                (identity, refusal) = await FindCharacterAsync(hello.LoginToken, stop);
+
+                if (refusal != null)
+                {
+                    GameServer.Refuse(this, refusal.Value);
+                    return false;
+                }
+            }
+
+            session = server.Hello(hello, this, identity);
 
             if (session != null)
             {
                 logger.LogInformation(
-                    "Player {Player} {How} channel {Channel}",
+                    "Player {Player} ({Name}) {How} channel {Channel}",
                     session.PlayerId,
+                    session.Identity?.Name,
                     hello.ResumeToken.Length > 0 ? "resumed in" : "joined",
                     session.Runner.Id);
             }
@@ -177,6 +197,26 @@ public sealed class WebSocketConnection : IConnection
                 Send(Packet.Encode(new RejectMessage(RejectReason.BadMessage)));
                 return false;
         }
+    }
+
+    /// <summary>The character of the account a login token belongs to, or why there is none.</summary>
+    private async Task<(PlayerIdentity?, RejectReason?)> FindCharacterAsync(string loginToken, CancellationToken stop)
+    {
+        AccountRecord account;
+
+        try
+        {
+            account = await accounts!.AuthenticateAsync(loginToken, stop);
+        }
+        catch (AccountError)
+        {
+            return (null, RejectReason.NotLoggedIn);
+        }
+
+        CharacterRecord? character = await accounts.CharacterAsync(account, stop);
+        return character == null
+            ? (null, RejectReason.NoCharacter)
+            : (new PlayerIdentity(character.Id, character.DisplayName ?? account.Username), null);
     }
 
     private async Task SendLoopAsync(CancellationToken stop)

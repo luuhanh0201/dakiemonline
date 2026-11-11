@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "id": "accounts.thu",
+  "status": "THU",
+  "source": "docs/KE-HOACH-T042.md, ban duyet 11/11/2026; thoi han ma, phien, khoa dang nhap va danh sach tu cam la de xuat; tu khong dau so khop ca khi ten co dau, tu co dau chi khop dung dau",
+  "usernameMinLength": 6,
+  "usernameMaxLength": 20,
+  "passwordMinLength": 6,
+  "passwordMaxLength": 32,
+  "characterNameMinLength": 3,
+  "characterNameMaxLength": 12,
+  "guestPrefix": "khach_",
+  "guestDigits": 6,
+  "codeDigits": 6,
+  "codeLifetimeSec": 600,
+  "codeMaxAttempts": 5,
+  "codeResendSec": 60,
+  "sessionLifetimeDays": 30,
+  "loginMaxFailures": 5,
+  "loginLockSec": 300,
+  "addressMaxFailures": 20,
+  "bannedWords": [
+    "admin", "quantri", "quanly", "dakiem", "hethong", "dcm", "dmm", "vcl", "clgt",
+    "địt", "lồn", "cặc", "buồi"
+  ]
+}

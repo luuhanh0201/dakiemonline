@@ -2,6 +2,8 @@ using System.Net.WebSockets;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
+using Game.Server;
+using Game.Server.Accounts;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Game.Net.Tests;
@@ -72,12 +74,98 @@ public sealed class WebSocketTests : IAsyncLifetime
         }
     }
 
-    private async Task<(Client Client, WelcomeMessage Welcome)> JoinAsync(byte[]? token = null)
+    private int names;
+
+    /// <summary>A guest with a character, as "Chơi ngay" and the create-character screen would make.</summary>
+    private async Task<(string LoginToken, string Name)> NewPlayerAsync(bool withCharacter = true)
+    {
+        AccountService accounts = app.Services.GetRequiredService<AccountService>();
+        LoginResult guest = await accounts.PlayNowAsync(null);
+        string name = $"Thử{Interlocked.Increment(ref names)}";
+
+        if (withCharacter)
+        {
+            await accounts.CreateCharacterAsync(await accounts.AuthenticateAsync(guest.Token), 1, name);
+        }
+
+        return (guest.Token, name);
+    }
+
+    private async Task<Client> SayHelloAsync(byte[]? resumeToken, string loginToken)
     {
         var client = new Client();
         await client.Socket.ConnectAsync(socketUri, CancellationToken.None);
-        await client.SendAsync(new HelloMessage(Packet.ProtocolVersion, token ?? Array.Empty<byte>()));
+        await client.SendAsync(new HelloMessage(Packet.ProtocolVersion, resumeToken ?? Array.Empty<byte>(), loginToken));
+        return client;
+    }
+
+    private async Task<(Client Client, WelcomeMessage Welcome)> JoinAsync(byte[]? token = null, string? loginToken = null)
+    {
+        loginToken ??= token == null ? (await NewPlayerAsync()).LoginToken : string.Empty;
+        Client client = await SayHelloAsync(token, loginToken);
         return (client, await client.ReceiveAsync<WelcomeMessage>());
+    }
+
+    [Fact]
+    public async Task TheCharacterOfTheLoginComesIn()
+    {
+        (string login, string name) = await NewPlayerAsync();
+
+        (Client client, WelcomeMessage welcome) = await JoinAsync(loginToken: login);
+        await using Client owned = client;
+
+        Assert.Equal(name, welcome.CharacterName);
+        Assert.False(welcome.Resumed);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("khong-co-phien-nay")]
+    public async Task WithoutALoginNobodyComesIn(string login)
+    {
+        await using Client client = await SayHelloAsync(null, login);
+
+        Assert.Equal(RejectReason.NotLoggedIn, (await client.ReceiveAsync<RejectMessage>()).Reason);
+    }
+
+    [Fact]
+    public async Task AnAccountWithoutACharacterIsSentToMakeOne()
+    {
+        (string login, _) = await NewPlayerAsync(withCharacter: false);
+
+        await using Client client = await SayHelloAsync(null, login);
+
+        Assert.Equal(RejectReason.NoCharacter, (await client.ReceiveAsync<RejectMessage>()).Reason);
+    }
+
+    [Fact]
+    public async Task TheSameCharacterFromAnotherDeviceTakesItOver()
+    {
+        (string login, string name) = await NewPlayerAsync();
+        (Client first, WelcomeMessage a) = await JoinAsync(loginToken: login);
+        await using Client disposeFirst = first;
+
+        (Client second, WelcomeMessage b) = await JoinAsync(loginToken: login);
+        await using Client disposeSecond = second;
+
+        Assert.Equal(RejectReason.LoggedInElsewhere, (await first.ReceiveAsync<RejectMessage>()).Reason);
+        Assert.Equal(a.PlayerId, b.PlayerId);
+        Assert.True(b.Resumed);
+        Assert.Equal(name, b.CharacterName);
+        Assert.Equal(1, app.Services.GetRequiredService<GameServer>().SessionCount);
+    }
+
+    [Fact]
+    public async Task AnOlderClientIsToldToUpdate()
+    {
+        var client = new Client();
+        await using Client owned = client;
+        await client.Socket.ConnectAsync(socketUri, CancellationToken.None);
+
+        // Hello as protocol 2 wrote it: version, then the resume token, and nothing after.
+        await client.Socket.SendAsync(new byte[] { (byte)MessageType.Hello, 2, 0, 0 }, WebSocketMessageType.Binary, true, CancellationToken.None);
+
+        Assert.Equal(RejectReason.VersionMismatch, (await client.ReceiveAsync<RejectMessage>()).Reason);
     }
 
     [Fact]

@@ -21,6 +21,15 @@ namespace Game.Net
         VersionMismatch = 1,
         ServerFull = 2,
         BadMessage = 3,
+
+        /// <summary>No login token, or one that expired: back to the login screen.</summary>
+        NotLoggedIn = 4,
+
+        /// <summary>The account has no character on this server yet: to the create-character screen.</summary>
+        NoCharacter = 5,
+
+        /// <summary>The same character came in from another device, which now has it.</summary>
+        LoggedInElsewhere = 6,
     }
 
     public abstract class NetMessage
@@ -30,28 +39,43 @@ namespace Game.Net
         internal abstract void Write(PacketWriter writer);
     }
 
-    /// <summary>Client → server, first message. An empty token joins as a new player.</summary>
+    /// <summary>
+    /// Client → server, first message. A resume token the server still holds brings the player back
+    /// as they were; otherwise the login token from the account API says whose character comes in.
+    /// </summary>
     public sealed class HelloMessage : NetMessage
     {
-        public HelloMessage(ushort protocolVersion, byte[] resumeToken)
+        public HelloMessage(ushort protocolVersion, byte[] resumeToken, string loginToken = "")
         {
             ProtocolVersion = protocolVersion;
             ResumeToken = resumeToken;
+            LoginToken = loginToken;
         }
 
         public override MessageType Type => MessageType.Hello;
         public ushort ProtocolVersion { get; }
         public byte[] ResumeToken { get; }
+        public string LoginToken { get; }
 
         internal override void Write(PacketWriter writer)
         {
             writer.UInt16(ProtocolVersion);
             writer.Bytes(ResumeToken);
+            writer.Text(LoginToken);
         }
 
         internal static HelloMessage Read(ref PacketReader reader)
         {
-            return new HelloMessage(reader.UInt16(), reader.Bytes());
+            ushort version = reader.UInt16();
+
+            // An older client stops here; reading on would only turn a version mismatch into a bad message.
+            if (version != Packet.ProtocolVersion)
+            {
+                reader.SkipRest();
+                return new HelloMessage(version, Array.Empty<byte>());
+            }
+
+            return new HelloMessage(version, reader.Bytes(), reader.Text());
         }
     }
 
@@ -66,8 +90,10 @@ namespace Game.Net
             byte[] token,
             uint lastInputSequence,
             bool testRoom,
-            PlayerSnapshot self)
+            PlayerSnapshot self,
+            string characterName = "")
         {
+            CharacterName = characterName;
             PlayerId = playerId;
             ChannelId = channelId;
             ServerTick = serverTick;
@@ -93,6 +119,9 @@ namespace Game.Net
 
         public PlayerSnapshot Self { get; }
 
+        /// <summary>The name the player gave their character, for the HUD.</summary>
+        public string CharacterName { get; }
+
         internal override void Write(PacketWriter writer)
         {
             writer.Int32(PlayerId);
@@ -103,6 +132,7 @@ namespace Game.Net
             writer.UInt32(LastInputSequence);
             writer.Bool(TestRoom);
             SnapshotCodec.Write(writer, Self);
+            writer.Text(CharacterName);
         }
 
         internal static WelcomeMessage Read(ref PacketReader reader)
@@ -115,7 +145,8 @@ namespace Game.Net
                 reader.Bytes(),
                 reader.UInt32(),
                 reader.Bool(),
-                SnapshotCodec.ReadPlayer(ref reader));
+                SnapshotCodec.ReadPlayer(ref reader),
+                reader.Text());
         }
     }
 

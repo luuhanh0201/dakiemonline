@@ -55,6 +55,24 @@ namespace Game.Net
 
         public byte[] Bytes() => Take(Byte()).ToArray();
 
+        /// <summary>UTF-8 text; bytes that are not valid UTF-8 are refused.</summary>
+        public string Text()
+        {
+            try
+            {
+                return Strict.GetString(Bytes());
+            }
+            catch (System.Text.DecoderFallbackException)
+            {
+                throw new ProtocolException("text is not UTF-8");
+            }
+        }
+
+        private static readonly System.Text.Encoding Strict = new System.Text.UTF8Encoding(false, true);
+
+        /// <summary>Drops whatever is left, for a message from another protocol version that is only answered with a refusal.</summary>
+        public void SkipRest() => Take(Remaining);
+
         public void End()
         {
             if (Remaining != 0)

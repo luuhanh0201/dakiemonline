@@ -39,14 +39,24 @@ namespace DaKiem.Client.Net
         private double nextRetrySec;
         private double droppedAtSec;
 
-        public OnlineClient(string url, GameConfig config)
+        private readonly string loginToken;
+
+        /// <param name="loginToken">From the account API; the server finds the account's character on it.</param>
+        public OnlineClient(string url, GameConfig config, string loginToken)
         {
             Url = url;
             this.config = config;
+            this.loginToken = loginToken ?? string.Empty;
             transport = NetTransport.Open(url);
         }
 
         public string Url { get; }
+
+        /// <summary>Why the server turned this client away, when it did; the account screens act on it.</summary>
+        public RejectReason? Rejected { get; private set; }
+
+        /// <summary>The character's name, as the server sent it.</summary>
+        public string CharacterName { get; private set; } = string.Empty;
         public OnlineStatus Status { get; private set; } = OnlineStatus.Connecting;
         public string Message { get; private set; } = "Đang kết nối...";
         public int PlayerId { get; private set; }
@@ -98,13 +108,19 @@ namespace DaKiem.Client.Net
 
             if (transport.State == TransportState.Open && !helloSent)
             {
-                transport.Send(Packet.Encode(new HelloMessage(Packet.ProtocolVersion, token)));
+                transport.Send(Packet.Encode(new HelloMessage(Packet.ProtocolVersion, token, loginToken)));
                 helloSent = true;
             }
 
-            for (byte[] packet = transport.Receive(); packet != null; packet = transport.Receive())
+            for (byte[] packet = transport.Receive(); packet != null && Status != OnlineStatus.Failed; packet = transport.Receive())
             {
                 Handle(packet);
+            }
+
+            // The server closes right after a refusal; its reason must not be replaced by "connection lost".
+            if (Status == OnlineStatus.Failed)
+            {
+                return;
             }
 
             if (transport.State == TransportState.Closed)
@@ -182,10 +198,14 @@ namespace DaKiem.Client.Net
                     RoundTrip?.Invoke(LastRoundTripMs);
                     break;
                 case RejectMessage reject:
+                    Rejected = reject.Reason;
                     Fail(reject.Reason switch
                     {
                         RejectReason.VersionMismatch => "Server khác phiên bản, cần cập nhật bản chơi",
                         RejectReason.ServerFull => "Server đã đầy",
+                        RejectReason.NotLoggedIn => "Phiên đăng nhập đã hết. Hãy đăng nhập lại.",
+                        RejectReason.NoCharacter => "Tài khoản chưa có nhân vật trên máy chủ này.",
+                        RejectReason.LoggedInElsewhere => "Nhân vật vừa được đăng nhập ở máy khác.",
                         _ => "Server từ chối gói tin",
                     });
                     break;
@@ -196,6 +216,7 @@ namespace DaKiem.Client.Net
         {
             bool resumedHere = welcome.Resumed && welcome.PlayerId == PlayerId;
             token = welcome.Token;
+            CharacterName = welcome.CharacterName;
             PlayerId = welcome.PlayerId;
             ChannelId = welcome.ChannelId;
             TestRoom = welcome.TestRoom;

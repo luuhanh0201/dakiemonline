@@ -79,10 +79,12 @@ public static class Database
         return NpgsqlDataSource.Create(builder.ConnectionString);
     }
 
-    /// <summary>Brings the schema up to date and returns a store on it, with the schema's version.</summary>
+    /// <summary>Brings the schema up to date and returns stores on it, with the schema's version.</summary>
     public static async Task<(ICharacterStore Store, int Version)> OpenAsync(NpgsqlDataSource source, string schema, CancellationToken cancel = default)
     {
         int version = await Migrator.MigrateAsync(source, schema, cancel);
         return (new PostgresCharacterStore(source, schema), version);
     }
+
+    public static IAccountStore Accounts(NpgsqlDataSource source, string schema) => new PostgresAccountStore(source, schema);
 }

@@ -61,8 +61,16 @@ namespace DaKiem.Client
             }
         }
 
+        /// <summary>Set while the login screens are up: the count would sit on the logo.</summary>
+        public static bool Hidden { get; set; }
+
         private void OnGUI()
         {
+            if (Hidden)
+            {
+                return;
+            }
+
             style ??= new GUIStyle(GUI.skin.label)
             {
                 fontSize = Screen.height / FontSizeDivisor,

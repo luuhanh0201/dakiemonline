@@ -111,6 +111,12 @@ namespace DaKiem.Client
 
         public bool EndScreenVisible => endPanel.activeSelf;
 
+        /// <summary>Hidden behind the account screens, before any fight has started.</summary>
+        public void SetVisible(bool visible)
+        {
+            canvas.enabled = visible;
+        }
+
         public bool ReplayButtonAt(Vector2 screenPosition)
         {
             return RectTransformUtility.RectangleContainsScreenPoint(replayButton, screenPosition, null);
@@ -303,12 +309,11 @@ namespace DaKiem.Client
             rect.anchoredPosition = position;
 
             var text = label.GetComponent<Text>();
-            text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            Accounts.UiKit.Apply(text, FontStyle.Bold);
             text.fontSize = fontSize;
             text.alignment = TextAnchor.MiddleCenter;
             text.color = Color.white;
             text.raycastTarget = false;
-            text.fontStyle = FontStyle.Bold;
             label.AddComponent<Outline>().effectColor = LabelOutline;
             return text;
         }

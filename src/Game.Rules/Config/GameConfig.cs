@@ -99,6 +99,9 @@ namespace Game.Rules
             ConfigObject root = Open(new Dictionary<string, string> { [ServerFile] = json }, ServerFile);
             var config = new ServerConfig
             {
+                ServerNumber = PositiveInt(root, "serverNumber"),
+                ServerName = root.String("serverName"),
+                ServerIsNew = root.Boolean("serverIsNew"),
                 Channels = PositiveInt(root, "channels"),
                 PlayersPerChannel = PositiveInt(root, "playersPerChannel"),
                 SpawnX = root.Double("spawnX"),

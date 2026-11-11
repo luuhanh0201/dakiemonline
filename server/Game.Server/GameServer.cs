@@ -10,13 +10,19 @@ public sealed class GameServer
     private readonly object gate = new();
     private readonly Dictionary<string, Session> sessionsByToken = new();
     private readonly Dictionary<int, Session> sessionsById = new();
+    private readonly Dictionary<long, Session> sessionsByCharacter = new();
     private readonly Dictionary<int, int> occupancy = new();
     private int nextPlayerId;
 
-    public GameServer(GameConfig config, ServerConfig server)
+    /// <param name="requireLogin">
+    /// True on the real server: a new player must come with a character. Server tests leave it off
+    /// and join players without accounts.
+    /// </param>
+    public GameServer(GameConfig config, ServerConfig server, bool requireLogin = false)
     {
         Config = config;
         Server = server;
+        RequireLogin = requireLogin;
         Runners = Enumerable.Range(1, server.Channels)
             .Select(id => new ChannelRunner(id, config, server))
             .ToList();
@@ -30,6 +36,7 @@ public sealed class GameServer
 
     public GameConfig Config { get; }
     public ServerConfig Server { get; }
+    public bool RequireLogin { get; }
     public IReadOnlyList<ChannelRunner> Runners { get; }
 
     public int SessionCount
@@ -45,8 +52,20 @@ public sealed class GameServer
 
     public IReadOnlyList<Thread> Start(CancellationToken stop) => Runners.Select(runner => runner.Start(stop)).ToList();
 
-    /// <summary>Handles Hello and returns the session the connection now speaks for, or null if refused.</summary>
-    public Session? Hello(HelloMessage hello, IConnection connection)
+    /// <summary>True when Hello with this resume token would bring a player back, so no login is needed.</summary>
+    public bool CanResume(byte[] resumeToken)
+    {
+        lock (gate)
+        {
+            return resumeToken.Length > 0 && sessionsByToken.ContainsKey(Convert.ToHexString(resumeToken));
+        }
+    }
+
+    /// <summary>
+    /// Handles Hello and returns the session the connection now speaks for, or null if refused. A
+    /// character already in a channel is taken over by the new connection, and the old one is told so.
+    /// </summary>
+    public Session? Hello(HelloMessage hello, IConnection connection, PlayerIdentity? identity = null)
     {
         if (hello.ProtocolVersion != Packet.ProtocolVersion)
         {
@@ -63,6 +82,18 @@ public sealed class GameServer
                 return existing;
             }
 
+            if (identity == null && RequireLogin)
+            {
+                Refuse(connection, RejectReason.NotLoggedIn);
+                return null;
+            }
+
+            if (identity != null && sessionsByCharacter.TryGetValue(identity.CharacterId, out Session? playing))
+            {
+                playing.Runner.Resume(playing, connection);
+                return playing;
+            }
+
             ChannelRunner? runner = Runners
                 .Where(candidate => occupancy[candidate.Id] < Server.PlayersPerChannel)
                 .OrderBy(candidate => candidate.Id)
@@ -74,9 +105,15 @@ public sealed class GameServer
                 return null;
             }
 
-            var session = new Session(++nextPlayerId, RandomNumberGenerator.GetBytes(Packet.TokenSize), runner);
+            var session = new Session(++nextPlayerId, RandomNumberGenerator.GetBytes(Packet.TokenSize), runner, identity);
             sessionsByToken[Convert.ToHexString(session.Token)] = session;
             sessionsById[session.PlayerId] = session;
+
+            if (identity != null)
+            {
+                sessionsByCharacter[identity.CharacterId] = session;
+            }
+
             occupancy[runner.Id]++;
             runner.Join(session, connection);
             return session;
@@ -111,6 +148,11 @@ public sealed class GameServer
             {
                 sessionsByToken.Remove(Convert.ToHexString(session.Token));
                 occupancy[runner.Id]--;
+
+                if (session.Identity != null)
+                {
+                    sessionsByCharacter.Remove(session.Identity.CharacterId);
+                }
             }
         }
     }

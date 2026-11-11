@@ -425,9 +425,11 @@ namespace Game.Rules.Tests
             Assert.Equal(5d, server.PlayerRespawnSec);
             Assert.Equal(10d, server.BossRespawnSec);
             Assert.True(server.TestRoom);
+            Assert.Equal((1, "Thủy Nguyệt", true), (server.ServerNumber, server.ServerName, server.ServerIsNew));
         }
 
         [Theory]
+        [InlineData("\"serverNumber\": 1", "\"serverNumber\": 0", "serverNumber")]
         [InlineData("\"channels\": 2", "\"channels\": 0", "channels")]
         [InlineData("\"snapshotEveryTicks\": 2", "\"snapshotEveryTicks\": \"2\"", "snapshotEveryTicks")]
         [InlineData("\"reconnectHoldSec\": 30", "\"reconnectHoldSec\": -1", "reconnectHoldSec")]

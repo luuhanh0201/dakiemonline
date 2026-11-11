@@ -14,20 +14,26 @@ namespace DaKiem.Client
         {
             foreach (string fileName in GameConfig.FileNames)
             {
-                string path = $"{Application.streamingAssetsPath}/config/{fileName}";
-                string url = path.Contains("://") ? path : $"file://{path}";
+                yield return Load(fileName, files);
+            }
+        }
 
-                using UnityWebRequest request = UnityWebRequest.Get(url);
-                yield return request.SendWebRequest();
+        /// <summary>One file into <paramref name="files"/>, such as <see cref="GameConfig.AccountsFile"/>.</summary>
+        public static IEnumerator Load(string fileName, Dictionary<string, string> files)
+        {
+            string path = $"{Application.streamingAssetsPath}/config/{fileName}";
+            string url = path.Contains("://") ? path : $"file://{path}";
 
-                if (request.result == UnityWebRequest.Result.Success)
-                {
-                    files[fileName] = request.downloadHandler.text;
-                }
-                else
-                {
-                    Debug.LogError($"Cannot read {fileName}: {request.error}");
-                }
+            using UnityWebRequest request = UnityWebRequest.Get(url);
+            yield return request.SendWebRequest();
+
+            if (request.result == UnityWebRequest.Result.Success)
+            {
+                files[fileName] = request.downloadHandler.text;
+            }
+            else
+            {
+                Debug.LogError($"Cannot read {fileName}: {request.error}");
             }
         }
     }

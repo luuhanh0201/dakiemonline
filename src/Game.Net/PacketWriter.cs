@@ -80,6 +80,12 @@ namespace Game.Net
             value.CopyTo(Reserve(value.Length));
         }
 
+        /// <summary>UTF-8 text as <see cref="Bytes"/>; at most 255 bytes once encoded.</summary>
+        public void Text(string value)
+        {
+            Bytes(System.Text.Encoding.UTF8.GetBytes(value));
+        }
+
         private Span<byte> Reserve(int count)
         {
             if (length + count > buffer.Length)
