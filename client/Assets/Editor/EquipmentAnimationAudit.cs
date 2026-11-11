@@ -87,7 +87,8 @@ namespace DaKiem.Client.Editor
                 MeshFilter[] meshes = root.GetComponentsInChildren<MeshFilter>(true);
                 var weapon = root.Find("Rig/hip/torso/hand_near/gear_grip/gear_weapon").GetComponent<SpriteRenderer>();
                 var head = root.Find("Rig/hip/torso/head/head").GetComponent<SpriteRenderer>();
-                var hat = root.Find("Rig/hip/torso/head/gear_hat").GetComponent<SpriteRenderer>();
+                // The hat slot no longer draws, so it may be missing from the rig.
+                var hat = root.Find("Rig/hip/torso/head/gear_hat")?.GetComponent<SpriteRenderer>();
                 float x = 0f;
                 // All 256 ordered pairs, including self-transitions, at 60 Hz.
                 for (int from = 0; from < (captureOnly ? 0 : States.Length); from++)
@@ -205,7 +206,7 @@ namespace DaKiem.Client.Editor
 
         private static void CheckOverlap(SpriteRenderer weapon, SpriteRenderer part, int combo, int facing, int from, int to, int frame, float x)
         {
-            if (!weapon.gameObject.activeInHierarchy || part.sprite == null) return;
+            if (part == null || !weapon.gameObject.activeInHierarchy || part.sprite == null) return;
             Sprite blade = weapon.sprite;
             Texture2D a = Pixels(blade.texture), b = Pixels(part.sprite.texture);
             Color32[] bladeMask = Masks[blade.texture], partMask = Masks[part.sprite.texture];
