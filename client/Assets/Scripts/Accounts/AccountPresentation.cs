@@ -35,7 +35,7 @@ namespace DaKiem.Client.Accounts
             float progress = Application.isPlaying ? Mathf.Clamp01((Time.unscaledTime - opened) / Mathf.Max(0.01f, Duration)) : 1f;
             float ease = 1f - Mathf.Pow(1f - progress, 3f);
             Stage.localScale = Vector3.one * scale;
-            Stage.anchoredPosition = new Vector2(150f * scale, -12f * (1f - ease));
+            Stage.anchoredPosition = new Vector2(0f, -12f * (1f - ease));
             Group.alpha = ease;
 
             // Keep the selected field above the native keyboard, without shrinking its text again.

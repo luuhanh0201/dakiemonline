@@ -38,6 +38,9 @@ namespace DaKiem.Client.Editor
             PlayerSettings.runInBackground = true;
             PlayerSettings.defaultWebScreenWidth = 1170;
             PlayerSettings.defaultWebScreenHeight = 540;
+
+            // Fills the browser window at its real resolution; the fixed 1170x540 box of the default template was scaled up and blurred.
+            PlayerSettings.WebGL.template = "PROJECT:DaKiem";
         }
     }
 }
