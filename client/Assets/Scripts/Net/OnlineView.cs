@@ -200,6 +200,7 @@ namespace DaKiem.Client.Net
             world.Follow(feet, state.Facing);
             selfFx.Show(client, state, predictor.Combat, LivingBoss, config.Boss, EventsOf(client.PlayerId), hurt.Contains(client.PlayerId), true, frameSeconds);
             self.SetVisible(!predictor.Resources.IsDead);
+            self.ShowAppearance(config, client.SelfAppearance);
             self.Show(
                 feet,
                 state.Facing,
@@ -236,6 +237,7 @@ namespace DaKiem.Client.Net
                 CombatState combat = CombatState.Showing(config, now.Casting, now.CastTicks, now.ComboStep, now.CastDirection, ShotsOf(pair.Key));
 
                 remote.View.SetVisible(!dead);
+                remote.View.ShowAppearance(config, now.Appearance);
                 remote.Fx.Show(remote, movement, combat, LivingBoss, config.Boss, EventsOf(pair.Key), hurt.Contains(pair.Key), false, frameSeconds);
                 remote.View.Show(
                     new Vector2(now.X, now.Y),

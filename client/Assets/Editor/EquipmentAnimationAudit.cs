@@ -51,13 +51,65 @@ namespace DaKiem.Client.Editor
             File.WriteAllBytes(Folder + "/confirmed-transitions.png", sheet.EncodeToPNG());
         }
 
+        /// <summary>
+        /// The two tier 1 sets of config/items.json, dressed the way the game does it (an Appearance through
+        /// CharacterView.ShowAppearance), in several poses facing both ways: Logs/equipment-audit/sets.png.
+        /// </summary>
+        public static void Sets()
+        {
+            Directory.CreateDirectory(Folder);
+            string configDir = Path.Combine(Application.dataPath, "../../config");
+            var files = new Dictionary<string, string>();
+            foreach (string name in GameConfig.FileNames) files[name] = File.ReadAllText(Path.Combine(configDir, name));
+            GameConfig config = GameConfig.Parse(files);
+            int Item(string id) { for (int i = 0; i < config.Gear.Count; i++) if (config.Gear[i].Id == id) return i; throw new ArgumentException(id); }
+            Appearance[] sets =
+            {
+                GearRules.Default(config),
+                new Appearance(Item("gear.nodachi"), Item("gear.giap"), Item("gear.hakama")),
+            };
+            int[] poses = { 0, 2, 3, 5, 8, 11 };
+            camera = new GameObject("SetsCamera").AddComponent<Camera>();
+            camera.orthographic = true; camera.orthographicSize = 0.95f;
+            camera.backgroundColor = new Color(0.12f, 0.12f, 0.2f);
+            camera.clearFlags = CameraClearFlags.SolidColor;
+            cell = new RenderTexture(240, 240, 24); camera.targetTexture = cell;
+            int columns = poses.Length * 2;
+            var sheet = new Texture2D(240 * columns, 240 * sets.Length, TextureFormat.RGB24, false);
+            var names = new StringBuilder();
+            // One character for every cell, changing clothes between sets as a player does. A second
+            // CharacterView made after the first was destroyed draws its head wrongly in the editor
+            // (also seen in the 10/11 sequence sheets); that is checked separately.
+            var view = new CharacterView();
+            float x = 0f;
+            for (int row = 0; row < sets.Length; row++)
+            {
+                foreach (GearSlot slot in GearRules.ShownSlots) names.Append(config.Gear[sets[row][slot]].Art).Append(slot == GearSlot.Pants ? "\n" : ", ");
+                view.ShowAppearance(config, sets[row]);
+                int column = 0;
+                foreach (int facing in new[] { 1, -1 })
+                foreach (int pose in poses)
+                {
+                    for (int f = 0; f < 14; f++) Step(view, pose, f, 60, facing, ref x);
+                    Render(x);
+                    sheet.ReadPixels(new Rect(0, 0, 240, 240), column * 240, (sets.Length - 1 - row) * 240);
+                    column++;
+                }
+            }
+            RenderTexture.active = null; sheet.Apply();
+            File.WriteAllBytes($"{Folder}/sets.png", sheet.EncodeToPNG());
+            File.WriteAllText($"{Folder}/sets.txt", names.ToString());
+            Debug.Log("Equipment sets sheet written");
+        }
+
         public static void Run()
         {
             bool captureOnly = Array.IndexOf(Environment.GetCommandLineArgs(), "-auditCaptureOnly") >= 0;
             bool quick = Array.IndexOf(Environment.GetCommandLineArgs(), "-auditQuick") >= 0;
             Directory.CreateDirectory(Folder);
             var catalog = new EquipmentCatalog();
-            var slots = (GearSlot[])Enum.GetValues(typeof(GearSlot));
+            // Only these slots have drawings on the character; the hat and the cape are icons only.
+            var slots = new[] { GearSlot.Weapon, GearSlot.Armor, GearSlot.Pants };
             int combinations = 1;
             foreach (var slot in slots) combinations *= catalog.ItemsIn(slot).Count;
             // Four unique weapon/hat silhouettes; armour and cape do not alter these masks.

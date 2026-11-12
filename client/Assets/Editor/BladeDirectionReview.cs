@@ -17,7 +17,8 @@ namespace DaKiem.Client.Editor
             var weaponChannel = typeof(CharacterView).GetField("WeaponTurn", BindingFlags.NonPublic | BindingFlags.Static);
             int angleIndex = (int)weaponChannel.GetRawConstantValue();
             var catalog = new EquipmentCatalog();
-            var slots = (GearSlot[])Enum.GetValues(typeof(GearSlot));
+            // Only these slots have drawings on the character; the hat and the cape are icons only.
+            var slots = new[] { GearSlot.Weapon, GearSlot.Armor, GearSlot.Pants };
             int combinations = 1;
             foreach (var slot in slots) combinations *= catalog.ItemsIn(slot).Count;
             int samples = 0, cuttingSamples = 0;

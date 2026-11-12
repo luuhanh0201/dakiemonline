@@ -55,6 +55,7 @@ namespace Game.Net
             CastTicks = castTicks;
             ComboStep = source.ComboStep;
             CastDirection = source.CastDirection;
+            Appearance = source.Appearance;
         }
 
         public double Tick { get; }
@@ -66,6 +67,9 @@ namespace Game.Net
         public int CastTicks { get; }
         public int ComboStep { get; }
         public sbyte CastDirection { get; }
+
+        /// <summary>What they wear, from the nearer sample, so a change shows with the drawn position.</summary>
+        public Appearance Appearance { get; }
     }
 
     /// <summary>Recent positions of one other player, drawn a little in the past so there are two to blend.</summary>

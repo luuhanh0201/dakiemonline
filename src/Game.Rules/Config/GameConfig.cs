@@ -52,6 +52,7 @@ namespace Game.Rules
             IReadOnlyList<MapBox> mapBoxes,
             IReadOnlyList<SkillConfig> skills,
             PotionConfig potion,
+            IReadOnlyList<GearItemConfig> gear,
             BossConfig boss)
         {
             Character = character;
@@ -59,6 +60,7 @@ namespace Game.Rules
             MapBoxes = mapBoxes;
             Skills = skills;
             Potion = potion;
+            Gear = gear;
             Boss = boss;
         }
 
@@ -77,17 +79,27 @@ namespace Game.Rules
         public IReadOnlyList<MapBox> MapBoxes { get; }
         public IReadOnlyList<SkillConfig> Skills { get; }
         public PotionConfig Potion { get; }
+
+        /// <summary>The equipment catalog, in file order; an item travels as its place in this list.</summary>
+        public IReadOnlyList<GearItemConfig> Gear { get; }
+
         public BossConfig Boss { get; }
 
         /// <summary>Takes the text of each file in <see cref="FileNames"/>, keyed by file name.</summary>
         public static GameConfig Parse(IReadOnlyDictionary<string, string> files)
         {
+            ConfigObject items = Open(files, ItemsFile);
+            PotionConfig potion = ParsePotion(items);
+            IReadOnlyList<GearItemConfig> gear = ParseGear(items);
+            items.RejectUnknownFields();
+
             return new GameConfig(
                 ParseCharacter(Open(files, CharacterFile)),
                 ParseMovement(Open(files, MovementFile)),
                 ParseMap(Open(files, MapFile)),
                 ParseSkills(Open(files, SkillsFile)),
-                ParseItems(Open(files, ItemsFile)),
+                potion,
+                gear,
                 ParseBoss(Open(files, BossFile)));
         }
 
@@ -135,7 +147,7 @@ namespace Game.Rules
             return root;
         }
 
-        private static PotionConfig ParseItems(ConfigObject root)
+        private static PotionConfig ParsePotion(ConfigObject root)
         {
             ConfigObject item = root.Object("potion");
             var potion = new PotionConfig
@@ -147,8 +159,85 @@ namespace Game.Rules
 
             ReadEntry(item, potion);
             item.RejectUnknownFields();
-            root.RejectUnknownFields();
             return potion;
+        }
+
+        private static readonly Dictionary<string, GearSlot> GearSlots = new Dictionary<string, GearSlot>
+        {
+            ["weapon"] = GearSlot.Weapon,
+            ["armor"] = GearSlot.Armor,
+            ["pants"] = GearSlot.Pants,
+            ["hat"] = GearSlot.Hat,
+            ["cape"] = GearSlot.Cape,
+        };
+
+        private static readonly Regex ArtPattern = new Regex("^[a-z0-9]+$");
+
+        /// <summary>The equipment catalog. An item travels as one byte, so there can be at most 255.</summary>
+        private static IReadOnlyList<GearItemConfig> ParseGear(ConfigObject root)
+        {
+            var gear = new List<GearItemConfig>();
+            var ids = new HashSet<string>();
+            var arts = new HashSet<string>();
+
+            foreach (ConfigObject entry in root.Array("gear"))
+            {
+                var item = new GearItemConfig
+                {
+                    Name = entry.String("name"),
+                    Slot = Lookup(entry, "slot", GearSlots),
+                    Tier = PositiveInt(entry, "tier"),
+                    Art = entry.String("art"),
+                    Default = entry.Has("default") && entry.Boolean("default"),
+                };
+
+                ReadEntry(entry, item);
+                entry.RejectUnknownFields();
+
+                if (item.Name.Trim().Length == 0)
+                {
+                    throw entry.Fail("name", "cannot be empty");
+                }
+
+                if (!ArtPattern.IsMatch(item.Art))
+                {
+                    throw entry.Fail("art", "must be lower-case letters and digits, as in the file names");
+                }
+
+                if (!ids.Add(item.Id))
+                {
+                    throw entry.Fail("id", $"duplicate id '{item.Id}'");
+                }
+
+                if (!arts.Add($"{item.Slot}_{item.Art}"))
+                {
+                    throw entry.Fail("art", $"another {item.Slot} item already uses '{item.Art}'");
+                }
+
+                if (item.Default && !GearRules.IsShown(item.Slot))
+                {
+                    throw entry.Fail("default", "only weapon, armor and pants items are worn by default");
+                }
+
+                gear.Add(item);
+            }
+
+            if (gear.Count > byte.MaxValue)
+            {
+                throw root.Fail("gear", $"at most {byte.MaxValue} items");
+            }
+
+            foreach (GearSlot slot in GearRules.ShownSlots)
+            {
+                int defaults = gear.Count(item => item.Slot == slot && item.Default);
+
+                if (defaults != 1)
+                {
+                    throw root.Fail("gear", $"needs exactly one default {slot.ToString().ToLowerInvariant()} item, found {defaults}");
+                }
+            }
+
+            return gear;
         }
 
         private static BossConfig ParseBoss(ConfigObject root)

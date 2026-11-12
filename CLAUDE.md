@@ -1,6 +1,6 @@
 # Dạ Kiếm Online
 
-Phạm vi hiện tại: mốc 3, lưu nhân vật; đang làm T041 (PostgreSQL trên Supabase), kế hoạch ở docs/KE-HOACH-MOC-3.md. Chuỗi kết nối nằm trong server/Game.Server/appsettings.Local.json, không commit. Mốc 2 đã xong T035–T040. T035–T038 (chiến đấu nhiều người và boss trên server): docs/KE-HOACH-MOC-2.md. T039–T040 (bảng giá kỹ năng, đo build): các điểm đã chốt ở docs/T039-T040-CAN-CHOT.md, kết quả ở docs/T040-NHAN-XET.md; đo lại bằng tools/measure-builds.ps1. Mốc 1 đã xong (docs/KE-HOACH-MOC-1.md). T003, T012, T023 của mốc 0.5 tạm hoãn.
+Phạm vi hiện tại: mốc 3, lưu nhân vật; đang làm T043 (đồng bộ thay đồ) và T044 (đồ bậc đầu), kế hoạch ở docs/KE-HOACH-T043-T044.md; T041, T042 đã xong (docs/KE-HOACH-MOC-3.md, docs/KE-HOACH-T042.md). Chuỗi kết nối nằm trong server/Game.Server/appsettings.Local.json, không commit. Mốc 2 đã xong T035–T040. T035–T038 (chiến đấu nhiều người và boss trên server): docs/KE-HOACH-MOC-2.md. T039–T040 (bảng giá kỹ năng, đo build): các điểm đã chốt ở docs/T039-T040-CAN-CHOT.md, kết quả ở docs/T040-NHAN-XET.md; đo lại bằng tools/measure-builds.ps1. Mốc 1 đã xong (docs/KE-HOACH-MOC-1.md). T003, T012, T023 của mốc 0.5 tạm hoãn.
 
 ## Quy tắc
 - Làm đúng đầu việc, không thêm tính năng ngoài đặc tả.

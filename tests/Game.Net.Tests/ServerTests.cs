@@ -122,6 +122,97 @@ public class ServerTests
         Assert.Equal(b.PlayerId, Assert.Single(seenByA.Others).Id);
     }
 
+    private int Item(string id) => config.Gear.ToList().FindIndex(item => item.Id == id);
+
+    [Fact]
+    public void PlayersStartInTheDefaultClothes()
+    {
+        var server = new GameServer(config, TestConfig.Server(channels: 1, snapshotEvery: 1));
+        var first = new FakeConnection();
+        var second = new FakeConnection();
+        Join(server, first);
+        Join(server, second);
+        TickAll(server);
+
+        Assert.Equal(GearRules.Default(config), first.Last<SnapshotMessage>().SelfAppearance);
+        Assert.Equal(GearRules.Default(config), Assert.Single(second.Last<SnapshotMessage>().Others).Appearance);
+    }
+
+    [Fact]
+    public void OthersSeeWhatAPlayerPutsOn()
+    {
+        var server = new GameServer(config, TestConfig.Server(channels: 1, snapshotEvery: 1));
+        var first = new FakeConnection();
+        var second = new FakeConnection();
+        Session a = Join(server, first);
+        Join(server, second);
+        TickAll(server);
+
+        a.Runner.Wear(a.PlayerId, first, new WearMessage(Item("gear.nodachi")));
+        a.Runner.Wear(a.PlayerId, first, new WearMessage(Item("gear.giap")));
+        TickAll(server);
+
+        var expected = new Appearance(Item("gear.nodachi"), Item("gear.giap"), Item("gear.vai"));
+        Assert.Equal(expected, first.Last<SnapshotMessage>().SelfAppearance);
+        Assert.Equal(expected, Assert.Single(second.Last<SnapshotMessage>().Others).Appearance);
+        Assert.Equal(GearRules.Default(config), second.Last<SnapshotMessage>().SelfAppearance);
+    }
+
+    [Fact]
+    public void SomeoneWhoComesInLaterSeesWhatOthersWear()
+    {
+        var server = new GameServer(config, TestConfig.Server(channels: 1, snapshotEvery: 1));
+        var first = new FakeConnection();
+        Session a = Join(server, first);
+        TickAll(server);
+        a.Runner.Wear(a.PlayerId, first, new WearMessage(Item("gear.hakama")));
+        TickAll(server);
+
+        var late = new FakeConnection();
+        Join(server, late);
+        TickAll(server);
+
+        Assert.Equal(Item("gear.hakama"), Assert.Single(late.Last<SnapshotMessage>().Others).Appearance.Pants);
+    }
+
+    [Theory]
+    [InlineData("gear.non")]
+    [InlineData("gear.choang_ngan")]
+    [InlineData(null)]
+    public void ItemsThatDoNotChangeTheLookOrDoNotExistAreIgnored(string? id)
+    {
+        var server = new GameServer(config, TestConfig.Server(channels: 1, snapshotEvery: 1));
+        var client = new FakeConnection();
+        Session session = Join(server, client);
+        TickAll(server);
+
+        session.Runner.Wear(session.PlayerId, client, new WearMessage(id == null ? 200 : Item(id)));
+        TickAll(server);
+
+        Assert.Equal(GearRules.Default(config), client.Last<SnapshotMessage>().SelfAppearance);
+        Assert.False(client.Closed);
+    }
+
+    [Fact]
+    public void ClothesStayOnThroughAReconnect()
+    {
+        var server = new GameServer(config, TestConfig.Server(channels: 1, snapshotEvery: 1));
+        var first = new FakeConnection();
+        Session session = Join(server, first);
+        TickAll(server);
+        session.Runner.Wear(session.PlayerId, first, new WearMessage(Item("gear.giap")));
+        TickAll(server);
+        session.Runner.Disconnected(session.PlayerId, first);
+        TickAll(server);
+
+        var again = new FakeConnection();
+        Join(server, again, first.Last<WelcomeMessage>().Token);
+        TickAll(server);
+
+        Assert.True(again.Last<WelcomeMessage>().Resumed);
+        Assert.Equal(Item("gear.giap"), again.Last<SnapshotMessage>().SelfAppearance.Armor);
+    }
+
     [Fact]
     public void ChannelsAreSeparate()
     {

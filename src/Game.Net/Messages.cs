@@ -14,6 +14,7 @@ namespace Game.Net
         Ping = 6,
         Pong = 7,
         Leave = 8,
+        Wear = 9,
     }
 
     public enum RejectReason : byte
@@ -301,7 +302,8 @@ namespace Game.Net
             SkillSlot? casting = null,
             int castTicks = 0,
             int comboStep = 0,
-            sbyte castDirection = 1)
+            sbyte castDirection = 1,
+            Appearance appearance = default)
         {
             Id = id;
             X = x;
@@ -312,6 +314,7 @@ namespace Game.Net
             CastTicks = castTicks;
             ComboStep = comboStep;
             CastDirection = castDirection;
+            Appearance = appearance;
         }
 
         public int Id { get; }
@@ -326,6 +329,9 @@ namespace Game.Net
 
         public int ComboStep { get; }
         public sbyte CastDirection { get; }
+
+        /// <summary>What they wear. Sent every snapshot: three bytes, and right for anyone who comes in late.</summary>
+        public Appearance Appearance { get; }
     }
 
     /// <summary>A projectile anyone in the room fired, for drawing.</summary>
@@ -439,7 +445,8 @@ namespace Game.Net
             int bossRespawnTicks,
             IReadOnlyList<RemotePlayer> others,
             IReadOnlyList<RemoteProjectile> projectiles,
-            IReadOnlyList<NetEvent> events)
+            IReadOnlyList<NetEvent> events,
+            Appearance selfAppearance = default)
         {
             if (others.Count > byte.MaxValue || projectiles.Count > byte.MaxValue || events.Count > byte.MaxValue)
             {
@@ -454,6 +461,7 @@ namespace Game.Net
             Others = others;
             Projectiles = projectiles;
             Events = events;
+            SelfAppearance = selfAppearance;
         }
 
         public override MessageType Type => MessageType.Snapshot;
@@ -469,11 +477,15 @@ namespace Game.Net
         public IReadOnlyList<RemoteProjectile> Projectiles { get; }
         public IReadOnlyList<NetEvent> Events { get; }
 
+        /// <summary>What this player wears, as the server last accepted it.</summary>
+        public Appearance SelfAppearance { get; }
+
         internal override void Write(PacketWriter writer)
         {
             writer.UInt32(ServerTick);
             writer.UInt32(AckSequence);
             SnapshotCodec.Write(writer, Self);
+            WriteAppearance(writer, SelfAppearance);
             SnapshotCodec.Write(writer, Boss);
             writer.UInt16(checked((ushort)BossRespawnTicks));
             writer.Byte((byte)Others.Count);
@@ -489,6 +501,7 @@ namespace Game.Net
                 writer.UInt16(checked((ushort)other.CastTicks));
                 writer.Byte(checked((byte)other.ComboStep));
                 writer.SByte(other.CastDirection);
+                WriteAppearance(writer, other.Appearance);
             }
 
             writer.Byte((byte)Projectiles.Count);
@@ -522,6 +535,7 @@ namespace Game.Net
             uint tick = reader.UInt32();
             uint ack = reader.UInt32();
             PlayerSnapshot self = SnapshotCodec.ReadPlayer(ref reader);
+            Appearance selfAppearance = ReadAppearance(ref reader);
             BossSnapshot boss = SnapshotCodec.ReadBoss(ref reader);
             int bossRespawn = reader.UInt16();
             var others = new RemotePlayer[reader.Byte()];
@@ -543,7 +557,7 @@ namespace Game.Net
                 int castTicks = reader.UInt16();
                 int combo = reader.Byte();
                 sbyte direction = Facing(reader.SByte());
-                others[index] = new RemotePlayer(id, x, y, facing, (RemoteFlags)flags, casting, castTicks, combo, direction);
+                others[index] = new RemotePlayer(id, x, y, facing, (RemoteFlags)flags, casting, castTicks, combo, direction, ReadAppearance(ref reader));
             }
 
             var projectiles = new RemoteProjectile[reader.Byte()];
@@ -569,7 +583,20 @@ namespace Game.Net
                 events[index] = new NetEvent(kind, player, combatKind, slot, amount, hitIndex, bossKind, reader.Byte());
             }
 
-            return new SnapshotMessage(tick, ack, self, boss, bossRespawn, others, projectiles, events);
+            return new SnapshotMessage(tick, ack, self, boss, bossRespawn, others, projectiles, events, selfAppearance);
+        }
+
+        /// <summary>One byte per shown slot. The client checks the items against its own catalog.</summary>
+        private static void WriteAppearance(PacketWriter writer, Appearance appearance)
+        {
+            writer.Byte(checked((byte)appearance.Weapon));
+            writer.Byte(checked((byte)appearance.Armor));
+            writer.Byte(checked((byte)appearance.Pants));
+        }
+
+        private static Appearance ReadAppearance(ref PacketReader reader)
+        {
+            return new Appearance(reader.Byte(), reader.Byte(), reader.Byte());
         }
 
         internal static sbyte Facing(sbyte value)
@@ -621,6 +648,30 @@ namespace Game.Net
         }
 
         internal static PongMessage Read(ref PacketReader reader) => new PongMessage(reader.UInt32(), reader.UInt32());
+    }
+
+    /// <summary>
+    /// Client → server: put on an item, given as its place in <see cref="GameConfig.Gear"/>. The server
+    /// checks it; the change shows in the next snapshot, for this player and for everyone around.
+    /// </summary>
+    public sealed class WearMessage : NetMessage
+    {
+        public WearMessage(int item)
+        {
+            if (item < 0 || item > byte.MaxValue)
+            {
+                throw new ProtocolException($"item {item} does not fit in a byte");
+            }
+
+            Item = item;
+        }
+
+        public override MessageType Type => MessageType.Wear;
+        public int Item { get; }
+
+        internal override void Write(PacketWriter writer) => writer.Byte((byte)Item);
+
+        internal static WearMessage Read(ref PacketReader reader) => new WearMessage(reader.Byte());
     }
 
     /// <summary>Client → server: quitting on purpose, so the server frees the place at once.</summary>

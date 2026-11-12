@@ -34,7 +34,7 @@ public class PacketTests
     private static SnapshotMessage FullSnapshot(int others = 2)
     {
         RemotePlayer[] players = Enumerable.Range(0, others)
-            .Select(index => new RemotePlayer(7 + index, 3.5f + index, 0f, 1, RemoteFlags.Grounded, SkillSlot.OptionB, 9, 0, -1))
+            .Select(index => new RemotePlayer(7 + index, 3.5f + index, 0f, 1, RemoteFlags.Grounded, SkillSlot.OptionB, 9, 0, -1, new Appearance(1, 2 + index, 5)))
             .ToArray();
         return new SnapshotMessage(
             900u,
@@ -49,7 +49,8 @@ public class PacketTests
                 new NetEvent(RoomEventKind.Combat, 7, CombatEventKind.SkillHit, SkillSlot.OptionB, 130, 0),
                 new NetEvent(RoomEventKind.Boss, 9, amount: 120, bossKind: BossEventKind.PlayerHit, bossAttack: 4),
                 new NetEvent(RoomEventKind.PlayerDied, 9),
-            });
+            },
+            new Appearance(0, 3, 254));
     }
 
     private static T RoundTrip<T>(T message)
@@ -167,6 +168,8 @@ public class PacketTests
         Assert.Equal(SkillSlot.OptionB, other.Casting);
         Assert.Equal(9, other.CastTicks);
         Assert.Equal(-1, other.CastDirection);
+        Assert.Equal(new Appearance(1, 3, 5), other.Appearance);
+        Assert.Equal(new Appearance(0, 3, 254), snapshot.SelfAppearance);
         RemoteProjectile shot = Assert.Single(snapshot.Projectiles);
         Assert.Equal(SkillSlot.Ranged, shot.Slot);
         Assert.Equal(6f, shot.X);
@@ -212,6 +215,23 @@ public class PacketTests
         Assert.Equal(55u, pong.ClientTimeMs);
         Assert.Equal(77u, pong.ServerTick);
         RoundTrip(new LeaveMessage());
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(3)]
+    [InlineData(255)]
+    public void WearRoundTrips(int item)
+    {
+        Assert.Equal(item, RoundTrip(new WearMessage(item)).Item);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(256)]
+    public void WearOutsideAByteIsRefused(int item)
+    {
+        Assert.Throws<ProtocolException>(() => new WearMessage(item));
     }
 
     [Fact]

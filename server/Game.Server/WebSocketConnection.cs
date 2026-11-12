@@ -187,6 +187,9 @@ public sealed class WebSocketConnection : IConnection
             case InputMessage input:
                 session.Runner.Input(session.PlayerId, this, input);
                 return true;
+            case WearMessage wear:
+                session.Runner.Wear(session.PlayerId, this, wear);
+                return true;
             case PingMessage ping:
                 GameServer.Ping(ping, session, this);
                 return true;

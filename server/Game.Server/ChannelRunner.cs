@@ -82,6 +82,19 @@ public sealed class ChannelRunner
         inbox.Enqueue(() => QueueInput(playerId, connection, input));
     }
 
+    /// <summary>Puts on an item if the catalog has it; anything else is ignored. Not saved until T045.</summary>
+    public void Wear(int playerId, IConnection connection, WearMessage wear)
+    {
+        inbox.Enqueue(() =>
+        {
+            if (slots.TryGetValue(playerId, out PlayerSlot? slot) && slot.Connection == connection
+                && GearRules.TryWear(config, slot.Appearance, wear.Item, out Appearance next))
+            {
+                slot.Appearance = next;
+            }
+        });
+    }
+
     public void Disconnected(int playerId, IConnection connection)
     {
         inbox.Enqueue(() => MarkAway(playerId, connection));
@@ -171,7 +184,7 @@ public sealed class ChannelRunner
             return;
         }
 
-        var slot = new PlayerSlot(session, connection, server.MaxQueuedInputs);
+        var slot = new PlayerSlot(session, connection, server.MaxQueuedInputs) { Appearance = GearRules.Default(config) };
         slots[session.PlayerId] = slot;
         SendWelcome(slot, player, resumed: false);
     }
@@ -303,7 +316,8 @@ public sealed class ChannelRunner
                 cast.Casting,
                 cast.CastTicks,
                 cast.ComboStep,
-                (sbyte)(cast.Direction == 0 ? movement.Facing : cast.Direction)));
+                (sbyte)(cast.Direction == 0 ? movement.Facing : cast.Direction),
+                slots[player.Id].Appearance));
 
             foreach (ProjectileSnapshot shot in cast.Projectiles)
             {
@@ -334,7 +348,8 @@ public sealed class ChannelRunner
                 Room.BossRespawnTicksLeft,
                 others,
                 projectiles,
-                events);
+                events,
+                slot.Appearance);
             slot.Connection.Send(Packet.Encode(snapshot));
         }
     }
@@ -357,6 +372,9 @@ public sealed class ChannelRunner
         public IConnection? Connection { get; set; }
         public int AwayTicksLeft { get; set; }
         public uint LastSequence { get; private set; }
+
+        /// <summary>What the player wears; kept while away, lost when the place is given up (saving is T045).</summary>
+        public Appearance Appearance { get; set; }
 
         public void Queue(InputMessage input)
         {

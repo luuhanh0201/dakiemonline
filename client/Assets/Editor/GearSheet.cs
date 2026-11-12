@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using Game.Rules;
 using UnityEngine;
 
 namespace DaKiem.Client.Editor
@@ -43,7 +44,8 @@ namespace DaKiem.Client.Editor
             string output = ReadOutputPath();
             var view = new CharacterView();
             var catalog = new EquipmentCatalog();
-            var slots = (GearSlot[])Enum.GetValues(typeof(GearSlot));
+            // Only these slots have drawings on the character; the hat and the cape are icons only.
+            var slots = new[] { GearSlot.Weapon, GearSlot.Armor, GearSlot.Pants };
 
             int combinations = 1;
             foreach (GearSlot slot in slots)

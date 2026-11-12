@@ -38,6 +38,12 @@ namespace DaKiem.Client
         private OnlineView onlineView;
         private bool refillPressed;
 
+        // Practising alone, clothes change at once; online they change when the server says.
+        private Appearance practiceAppearance;
+
+        // The test room's clothes buttons, folded away until "Thử đồ" opens them.
+        private bool gearButtonsOpen;
+
         private const string ServerAddressKey = "server.address";
         private const string ServerAddressFile = "server-address.txt";
 
@@ -100,6 +106,7 @@ namespace DaKiem.Client
             input = new InputReader(hud);
             view = new WorldView(config.MapBoxes);
             character = new CharacterView();
+            practiceAppearance = GearRules.Default(config);
             hud.ShowBossBar(false);
             hud.SetVisible(false);
             serverAddress = PlayerPrefs.GetString(ServerAddressKey, DefaultServerAddress());
@@ -204,9 +211,12 @@ namespace DaKiem.Client
             Vector2 feet = Vector2.Lerp(previousFeet, currentFeet, blend);
 
             view.Follow(feet, fight.Player.Facing);
-#if UNITY_STANDALONE
+#if UNITY_STANDALONE || UNITY_WEBGL
             GearSlot? changed = input.ConsumeGearChange();
-            if (changed.HasValue) character.WearNext(changed.Value);
+            if (changed.HasValue) practiceAppearance = practiceAppearance.With(changed.Value, GearRules.Next(config, practiceAppearance, changed.Value));
+#endif
+            character.ShowAppearance(config, practiceAppearance);
+#if UNITY_STANDALONE
             if (input.ConsumeSlashStyleChange()) fx.ToggleSlashPackage();
             if (input.ConsumeBossHoldChange()) fight.BossHeld = bossHeld = !bossHeld;
             if (input.ConsumeFreeCastingChange()) fight.FreeCasting = freeCasting = !freeCasting;
@@ -383,6 +393,11 @@ namespace DaKiem.Client
                 return;
             }
 
+#if UNITY_STANDALONE || UNITY_WEBGL
+            GearSlot? changed = input.ConsumeGearChange();
+            if (changed.HasValue && !screens.Visible) online.WearNext(changed.Value);
+#endif
+
             accumulator += frame;
 
             // While an account screen is over the game, touches belong to it and the character stands still.
@@ -468,7 +483,43 @@ namespace DaKiem.Client
                 refillPressed = true;
             }
 
+            DrawGearButtons(unit, button);
             DrawNotice(small, shadow);
+        }
+
+        /// <summary>
+        /// The test room's clothes tryout (decided 12/11/2026): until there is an inventory, a phone has no
+        /// F1 to F3, so "Thử đồ" opens one button per shown slot. Real play never shows it.
+        /// </summary>
+        private void DrawGearButtons(float unit, GUIStyle button)
+        {
+            if (!online.TestRoom || online.Status != OnlineStatus.Playing)
+            {
+                return;
+            }
+
+            float left = Screen.width - unit * 3.2f;
+            float top = unit * 3.5f;
+
+            if (GUI.Button(new Rect(left, top, unit * 3f, unit * 0.9f), gearButtonsOpen ? "Đóng thử đồ" : "Thử đồ", button))
+            {
+                gearButtonsOpen = !gearButtonsOpen;
+            }
+
+            if (!gearButtonsOpen)
+            {
+                return;
+            }
+
+            string[] labels = { "Đổi vũ khí", "Đổi áo", "Đổi quần" };
+
+            for (int index = 0; index < GearRules.ShownSlots.Count; index++)
+            {
+                if (GUI.Button(new Rect(left, top + unit * (1.1f + 1.1f * index), unit * 3f, unit * 0.9f), labels[index], button))
+                {
+                    online.WearNext(GearRules.ShownSlots[index]);
+                }
+            }
         }
 
         /// <summary>Tells a fallen player, or everyone after a won fight, when things come back.</summary>

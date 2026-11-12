@@ -47,6 +47,7 @@ namespace DaKiem.Client.Net
             Url = url;
             this.config = config;
             this.loginToken = loginToken ?? string.Empty;
+            SelfAppearance = GearRules.Default(config);
             transport = NetTransport.Open(url);
         }
 
@@ -82,6 +83,9 @@ namespace DaKiem.Client.Net
 
         /// <summary>Projectiles in flight from the latest snapshot, by owner.</summary>
         public IReadOnlyList<RemoteProjectile> Projectiles => projectiles;
+
+        /// <summary>What the server last said this player wears; the default clothes until it says.</summary>
+        public Appearance SelfAppearance { get; private set; }
 
 
         public LatencyStats Latency { get; } = new LatencyStats();
@@ -144,6 +148,20 @@ namespace DaKiem.Client.Net
 
             InputMessage input = Predictor.Advance(moveX, moveY, dash, combat.SkillPressed, combat.PotionPressed, refill);
             transport.Send(Packet.Encode(input));
+        }
+
+        /// <summary>
+        /// Asks to put on the next item in a slot. Nothing changes here until the server accepts it and
+        /// a snapshot says so, so the player always sees what everyone else sees.
+        /// </summary>
+        public void WearNext(GearSlot slot)
+        {
+            if (Status != OnlineStatus.Playing)
+            {
+                return;
+            }
+
+            transport.Send(Packet.Encode(new WearMessage(GearRules.Next(config, SelfAppearance, slot))));
         }
 
         /// <summary>Leaves on purpose: the server frees the place at once.</summary>
@@ -238,6 +256,11 @@ namespace DaKiem.Client.Net
             UpdateBoss(snapshot);
             Predictor.Reconcile(snapshot.AckSequence, snapshot.Self);
             projectiles = snapshot.Projectiles;
+
+            if (GearRules.IsValid(config, snapshot.SelfAppearance))
+            {
+                SelfAppearance = snapshot.SelfAppearance;
+            }
             events.AddRange(snapshot.Events);
 
             present.Clear();

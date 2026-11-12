@@ -1,16 +1,10 @@
 using System;
 using System.Collections.Generic;
+using Game.Rules;
 using UnityEngine;
 
 namespace DaKiem.Client
 {
-    public enum GearSlot
-    {
-        Weapon,
-        Armor,
-        Pants,
-    }
-
     /// <summary>
     /// Finds every equipment drawing by its file name, slot_item_part, so adding an item only
     /// means adding its images.
@@ -140,7 +134,7 @@ namespace DaKiem.Client
             frontArmor = front.AddLayer("armor", null, FrontArmorOrder);
             frontWeapon = front.AddLayer("weapon", null, FrontWeaponOrder);
 
-            foreach (GearSlot slot in Enum.GetValues(typeof(GearSlot)))
+            foreach (GearSlot slot in GearRules.ShownSlots)
             {
                 int initial = 0;
                 if (slot == GearSlot.Weapon)
@@ -157,6 +151,33 @@ namespace DaKiem.Client
         public void WearNext(GearSlot slot)
         {
             Wear(slot, worn[slot] + 1);
+        }
+
+        /// <summary>Puts on the item drawn as <paramref name="art"/>; an item without drawings leaves the slot as it is.</summary>
+        public void Wear(GearSlot slot, string art)
+        {
+            int index = -1;
+            IReadOnlyList<string> items = catalog.ItemsIn(slot);
+
+            for (int at = 0; at < items.Count; at++)
+            {
+                if (items[at] == art)
+                {
+                    index = at;
+                    break;
+                }
+            }
+
+            if (index < 0)
+            {
+                Debug.LogWarning($"No drawing for {slot} '{art}'");
+                return;
+            }
+
+            if (index != worn[slot])
+            {
+                Wear(slot, index);
+            }
         }
 
         public void Wear(GearSlot slot, int index)

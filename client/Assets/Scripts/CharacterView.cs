@@ -398,6 +398,29 @@ namespace DaKiem.Client
             equipment.Wear(slot, index);
         }
 
+        /// <summary>
+        /// Dresses the character as the server says, or as practice mode chose. Anything the catalog does
+        /// not know falls back to the default clothes rather than leaving a slot wrong.
+        /// </summary>
+        public void ShowAppearance(GameConfig config, Appearance appearance)
+        {
+            if (shownAppearance == appearance)
+            {
+                return;
+            }
+
+            shownAppearance = appearance;
+            Appearance dressed = GearRules.IsValid(config, appearance) ? appearance : GearRules.Default(config);
+
+            foreach (GearSlot slot in GearRules.ShownSlots)
+            {
+                equipment.Wear(slot, config.Gear[dressed[slot]].Art);
+            }
+        }
+
+        // Null until the first call, so the first appearance is always put on.
+        private Appearance? shownAppearance;
+
         public void Show(Vector2 feet, int facing, bool grounded, float verticalSpeed, bool dashing, CastPhase phase, bool hurt, float frameSeconds = -1f, SwingMoment swing = default)
         {
             float deltaTime = Mathf.Max(frameSeconds < 0f ? Time.deltaTime : frameSeconds, 0.0001f);

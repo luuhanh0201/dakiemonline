@@ -7,5 +7,100 @@
     "healHp": 300,
     "charges": 5,
     "cooldownSec": 5
-  }
+  },
+  "gear": [
+    {
+      "id": "gear.kiem",
+      "status": "CHOT",
+      "source": "KE-HOACH-T043-T044, bo vai bac 1, 12/11/2026",
+      "name": "Kiếm",
+      "slot": "weapon",
+      "tier": 1,
+      "art": "kiem",
+      "default": true
+    },
+    {
+      "id": "gear.nodachi",
+      "status": "CHOT",
+      "source": "KE-HOACH-T043-T044, bo giap bac 1, 12/11/2026",
+      "name": "Trường kiếm",
+      "slot": "weapon",
+      "tier": 1,
+      "art": "nodachi"
+    },
+    {
+      "id": "gear.aovai",
+      "status": "CHOT",
+      "source": "KE-HOACH-T043-T044, bo vai bac 1, 12/11/2026",
+      "name": "Áo vải",
+      "slot": "armor",
+      "tier": 1,
+      "art": "aovai",
+      "default": true
+    },
+    {
+      "id": "gear.giap",
+      "status": "CHOT",
+      "source": "KE-HOACH-T043-T044, bo giap bac 1, 12/11/2026",
+      "name": "Giáp lá",
+      "slot": "armor",
+      "tier": 1,
+      "art": "giap"
+    },
+    {
+      "id": "gear.vai",
+      "status": "CHOT",
+      "source": "KE-HOACH-T043-T044, bo vai bac 1, 12/11/2026",
+      "name": "Quần vải",
+      "slot": "pants",
+      "tier": 1,
+      "art": "vai",
+      "default": true
+    },
+    {
+      "id": "gear.hakama",
+      "status": "CHOT",
+      "source": "KE-HOACH-T043-T044, bo giap bac 1, 12/11/2026",
+      "name": "Quần xếp nếp",
+      "slot": "pants",
+      "tier": 1,
+      "art": "hakama"
+    },
+    {
+      "id": "gear.non",
+      "status": "DE_XUAT",
+      "source": "KE-HOACH-T043-T044, o chi cong chi so, 12/11/2026",
+      "name": "Nón lá",
+      "slot": "hat",
+      "tier": 1,
+      "art": "non"
+    },
+    {
+      "id": "gear.mu",
+      "status": "DE_XUAT",
+      "source": "KE-HOACH-T043-T044, o chi cong chi so, 12/11/2026",
+      "name": "Mũ sắt",
+      "slot": "hat",
+      "tier": 1,
+      "art": "mu"
+    },
+    {
+      "id": "gear.choang_ngan",
+      "status": "DE_XUAT",
+      "source": "KE-HOACH-T043-T044, o chi cong chi so, 12/11/2026",
+      "name": "Choàng ngắn",
+      "slot": "cape",
+      "tier": 1,
+      "art": "ngan"
+    },
+    {
+      "id": "gear.choang_dai",
+      "status": "DE_XUAT",
+      "source": "KE-HOACH-T043-T044, o chi cong chi so, 12/11/2026",
+      "name": "Choàng dài",
+      "slot": "cape",
+      "tier": 1,
+      "art": "dai"
+    }
+  ]
 }
