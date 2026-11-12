@@ -134,15 +134,21 @@ namespace Game.Rules
             return players.TryGetValue(playerId, out RoomPlayer? player) ? player : null;
         }
 
-        /// <summary>Adds a fresh player at the spawn point, or returns null when the room is full or the id is taken.</summary>
-        public RoomPlayer? Join(int playerId)
+        /// <summary>
+        /// Adds a fresh player at the spawn point, or where a saved character last stood, on the ground
+        /// (T045). Returns null when the room is full or the id is taken.
+        /// </summary>
+        public RoomPlayer? Join(int playerId, double? x = null)
         {
             if (IsFull || players.ContainsKey(playerId))
             {
                 return null;
             }
 
-            var player = new RoomPlayer(playerId, NewMovement(), new CombatState(config.Potion), new ResourceState(config.Character));
+            MovementState movement = x == null || double.IsNaN(x.Value) || double.IsInfinity(x.Value)
+                ? NewMovement()
+                : new MovementState(x.Value, 0d, config.Character.MaxStamina);
+            var player = new RoomPlayer(playerId, movement, new CombatState(config.Potion), new ResourceState(config.Character));
             players.Add(playerId, player);
             return player;
         }

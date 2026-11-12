@@ -58,6 +58,11 @@ namespace Game.Net
             BinaryPrimitives.WriteUInt32LittleEndian(Reserve(4), value);
         }
 
+        public void Int64(long value)
+        {
+            BinaryPrimitives.WriteInt64LittleEndian(Reserve(8), value);
+        }
+
         public void Single(float value)
         {
             Int32(BitConverter.SingleToInt32Bits(value));

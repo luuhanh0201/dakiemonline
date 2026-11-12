@@ -2,8 +2,10 @@ using System;
 using System.IO;
 using System.Reflection;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEditor;
 using DaKiem.Client.Accounts;
+using Game.Net;
 using Game.Rules;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -29,7 +31,7 @@ namespace DaKiem.Client.Editor
             File.WriteAllText(Path.Combine(output, "frame-check.txt"), "");
             // Every screen at every common shape: the mock-up, phones held sideways, 4:3 tablets, 32:9,
             // a maximised browser window, laptops, 16:10 and a small window.
-            string[] screens = { "login", "register", "forgot", "link", "servers", "character", "reset", "code", "guest", "linked" };
+            string[] screens = { "login", "register", "forgot", "link", "servers", "character", "reset", "code", "guest", "linked", "bag" };
             foreach (string size in Sizes.Keys)
                 foreach (string screen in screens)
                     Capture(output, size.Length == 0 ? screen : screen + "-" + size);
@@ -56,7 +58,8 @@ namespace DaKiem.Client.Editor
             Vector2Int size = Sizes.TryGetValue(suffix, out Vector2Int found) ? found : Sizes[""];
             int width = size.x;
             int height = size.y;
-            bool inGame = page.StartsWith("guest") || page.StartsWith("linked");
+            bool inGame = page.StartsWith("guest") || page.StartsWith("linked") || page.StartsWith("bag");
+            RectTransform bagPanel = null;
             var rules = GameConfig.ParseAccounts(File.ReadAllText(Path.Combine(Application.dataPath, "../../config/accounts.json")));
             var scene = LoginSceneConfig.Parse(File.ReadAllText(Path.Combine(Application.dataPath, "../../config/login-scene.json")));
             UnityEngine.Random.InitState(1206);
@@ -81,6 +84,18 @@ namespace DaKiem.Client.Editor
                 case "character": Call(screens, "ShowCreateCharacter", server); break;
                 case "guest": screens.ShowGuestReminderInGame(); break;
                 case "linked": Call(screens, "Done", "Đã liên kết. Từ nay đăng nhập bằng tài khoản <color=#F2C76E>kiemkhach_99</color>.", true); break;
+                case "bag":
+                {
+                    // The starter bag with ids, a hat worn too, and the trường kiếm chosen.
+                    GameConfig game = LoadGameConfig();
+                    long id = 0;
+                    var items = InventoryRules.Starter(game).Select(item => new OwnedItem(++id, item.Item, item.Quantity, item.Place, item.Slot)).ToList();
+                    var bag = InventoryScreen.Create(game, (kind, target, to) => { });
+                    bag.Toggle(new InventoryMessage(game.Bag.Slots, items));
+                    Call(bag, "Select", items.First(item => item.Place == ItemPlace.Bag).Id);
+                    bagPanel = (RectTransform)bag.transform.Find("Inventory/SafeContent/Stage/panel");
+                    break;
+                }
                 case "servers":
                     Call(screens, "ShowServers", new object[] { null });
                     Set(screens, "servers", new[] { server }); Set(screens, "chosenServer", server);
@@ -122,7 +137,7 @@ namespace DaKiem.Client.Editor
                 if (behaviour.GetType().Name == "OneLine") Call(behaviour, "LateUpdate");
             foreach (var backdrop in UnityEngine.Object.FindObjectsByType<AccountMessageBackdrop>(FindObjectsSortMode.None))
                 Call(backdrop, "LateUpdate");
-            CheckFrame(output, page, bg, camera, width, height);
+            CheckFrame(output, page, bagPanel ?? (RectTransform)typeof(LivingBackground).GetField("panel", Private).GetValue(bg), camera, width, height);
             foreach (InputField field in UnityEngine.Object.FindObjectsByType<InputField>(FindObjectsSortMode.None))
             {
                 var hint = field.placeholder as Text;
@@ -203,9 +218,8 @@ namespace DaKiem.Client.Editor
         /// navy area and off the gold bottom corners. Things placed fully outside the frame, such as VÀO GAME
         /// below the server list, are fine. The logo, the title plaque and the X belong on the beam by design.
         /// </summary>
-        private static void CheckFrame(string output, string page, LivingBackground bg, Camera camera, int width, int height)
+        private static void CheckFrame(string output, string page, RectTransform panel, Camera camera, int width, int height)
         {
-            var panel = (RectTransform)typeof(LivingBackground).GetField("panel", Private).GetValue(bg);
             var stage = (RectTransform)panel.parent;
             Rect frame = StageRect(stage, panel);
             Rect inner = Rect.MinMaxRect(frame.xMin + Kit("FrameSide"), frame.yMin + Kit("FrameTop"), frame.xMax - Kit("FrameSide"), frame.yMax - Kit("FrameBottom"));
@@ -229,8 +243,8 @@ namespace DaKiem.Client.Editor
                 checkedParts++;
                 Rect box = StageRect(stage, part);
 
-                // The tab strip is a backing behind its two buttons; nothing else may sit on top of another part.
-                if (part.name != "Tabs")
+                // The tab strip and the bag's info panel are backings behind their parts; nothing else may sit on top of another part.
+                if (part.name != "Tabs" && part.name != "Info")
                 {
                     Rect core = Rect.MinMaxRect(box.xMin + 1f, box.yMin + 1f, box.xMax - 1f, box.yMax - 1f);
                     foreach (var other in placed)
@@ -256,6 +270,14 @@ namespace DaKiem.Client.Editor
                 }
             }
             File.AppendAllText(Path.Combine(output, "frame-check.txt"), $"PASS {page} ({width}x{height}): {checkedParts} parts inside the frame or clear of it, all on screen\n");
+        }
+
+        private static GameConfig LoadGameConfig()
+        {
+            string configDir = Path.Combine(Application.dataPath, "../../config");
+            var files = new Dictionary<string, string>();
+            foreach (string name in GameConfig.FileNames) files[name] = File.ReadAllText(Path.Combine(configDir, name));
+            return GameConfig.Parse(files);
         }
 
         /// <summary>A layout constant of the client's internal UiKit, such as the frame's measured border.</summary>

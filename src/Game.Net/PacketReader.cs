@@ -49,6 +49,8 @@ namespace Game.Net
 
         public uint UInt32() => BinaryPrimitives.ReadUInt32LittleEndian(Take(4));
 
+        public long Int64() => BinaryPrimitives.ReadInt64LittleEndian(Take(8));
+
         public float Single() => Finite(BitConverter.Int32BitsToSingle(Int32()));
 
         public double Double() => Finite(BitConverter.Int64BitsToDouble(BinaryPrimitives.ReadInt64LittleEndian(Take(8))));

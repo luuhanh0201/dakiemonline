@@ -167,7 +167,21 @@ public sealed class WebSocketConnection : IConnection
                 }
             }
 
-            session = server.Hello(hello, this, identity);
+            // A saved character's bag and position are loaded before it joins, so it appears where it left.
+            double? spawnX = null;
+
+            try
+            {
+                spawnX = identity == null ? null : await server.Inventory.LoadAsync(identity.CharacterId, stop);
+            }
+            catch (Exception error) when (error is not OperationCanceledException)
+            {
+                logger.LogError(error, "Could not load the bag of character {Character}", identity?.CharacterId);
+                Send(Packet.Encode(new RejectMessage(RejectReason.Unavailable)));
+                return false;
+            }
+
+            session = server.Hello(hello, this, identity, spawnX);
 
             if (session != null)
             {
@@ -177,6 +191,7 @@ public sealed class WebSocketConnection : IConnection
                     session.Identity?.Name,
                     hello.ResumeToken.Length > 0 ? "resumed in" : "joined",
                     session.Runner.Id);
+                await server.Inventory.AttachAsync(session, this, stop);
             }
 
             return session != null;
@@ -187,8 +202,9 @@ public sealed class WebSocketConnection : IConnection
             case InputMessage input:
                 session.Runner.Input(session.PlayerId, this, input);
                 return true;
-            case WearMessage wear:
-                session.Runner.Wear(session.PlayerId, this, wear);
+            case ItemActionMessage action:
+                // Not awaited: the database must not hold up the inputs behind it.
+                _ = HandleItemAsync(session, action, stop);
                 return true;
             case PingMessage ping:
                 GameServer.Ping(ping, session, this);
@@ -199,6 +215,21 @@ public sealed class WebSocketConnection : IConnection
             default:
                 Send(Packet.Encode(new RejectMessage(RejectReason.BadMessage)));
                 return false;
+        }
+    }
+
+    private async Task HandleItemAsync(Session playing, ItemActionMessage action, CancellationToken stop)
+    {
+        try
+        {
+            await server.Inventory.HandleAsync(playing, this, action, stop);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception error)
+        {
+            logger.LogError(error, "Bag action {Action} of player {Player} failed", action.Kind, playing.PlayerId);
         }
     }
 

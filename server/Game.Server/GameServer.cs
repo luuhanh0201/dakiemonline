@@ -18,11 +18,13 @@ public sealed class GameServer
     /// True on the real server: a new player must come with a character. Server tests leave it off
     /// and join players without accounts.
     /// </param>
-    public GameServer(GameConfig config, ServerConfig server, bool requireLogin = false)
+    /// <param name="items">Where bags are kept; memory when null, as in server tests.</param>
+    public GameServer(GameConfig config, ServerConfig server, bool requireLogin = false, Db.IItemStore? items = null, ILogger? logger = null)
     {
         Config = config;
         Server = server;
         RequireLogin = requireLogin;
+        Inventory = new InventoryService(config, items ?? new Db.InMemoryItemStore(), logger);
         Runners = Enumerable.Range(1, server.Channels)
             .Select(id => new ChannelRunner(id, config, server))
             .ToList();
@@ -31,6 +33,7 @@ public sealed class GameServer
         {
             occupancy[runner.Id] = 0;
             runner.PlayerRemoved += playerId => Forget(runner, playerId);
+            runner.PlayerLeaving += (session, x) => _ = Inventory.LeftAsync(session, x);
         }
     }
 
@@ -38,6 +41,23 @@ public sealed class GameServer
     public ServerConfig Server { get; }
     public bool RequireLogin { get; }
     public IReadOnlyList<ChannelRunner> Runners { get; }
+    public InventoryService Inventory { get; }
+
+    /// <summary>When the server stops, keeps where everyone in a channel stood, as leaving would.</summary>
+    public async Task SavePositionsAsync()
+    {
+        List<(Session Session, double X)> playing;
+
+        lock (gate)
+        {
+            playing = sessionsById.Values
+                .Where(session => session.Identity != null && session.Runner.Positions.ContainsKey(session.PlayerId))
+                .Select(session => (session, session.Runner.Positions[session.PlayerId]))
+                .ToList();
+        }
+
+        await Task.WhenAll(playing.Select(entry => Inventory.LeftAsync(entry.Session, entry.X)));
+    }
 
     public int SessionCount
     {
@@ -65,7 +85,8 @@ public sealed class GameServer
     /// Handles Hello and returns the session the connection now speaks for, or null if refused. A
     /// character already in a channel is taken over by the new connection, and the old one is told so.
     /// </summary>
-    public Session? Hello(HelloMessage hello, IConnection connection, PlayerIdentity? identity = null)
+    /// <param name="spawnX">Where a saved character last stood; used only when it comes into a channel anew.</param>
+    public Session? Hello(HelloMessage hello, IConnection connection, PlayerIdentity? identity = null, double? spawnX = null)
     {
         if (hello.ProtocolVersion != Packet.ProtocolVersion)
         {
@@ -115,7 +136,7 @@ public sealed class GameServer
             }
 
             occupancy[runner.Id]++;
-            runner.Join(session, connection);
+            runner.Join(session, connection, spawnX);
             return session;
         }
     }

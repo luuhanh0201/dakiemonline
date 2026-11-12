@@ -8,6 +8,15 @@
     "charges": 5,
     "cooldownSec": 5
   },
+  "bag": {
+    "id": "bag.hanh_trang",
+    "status": "THU",
+    "source": "KE-HOACH-HANH-TRANG 12/11/2026: 30 o co dinh; do tren dat 5 phut theo GDD 11.3",
+    "slots": 30,
+    "groundLifetimeSec": 300,
+    "pickupRange": 1.2,
+    "starterBag": ["gear.nodachi", "gear.giap", "gear.hakama", "gear.non", "gear.choang_ngan"]
+  },
   "gear": [
     {
       "id": "gear.kiem",

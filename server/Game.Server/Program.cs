@@ -34,8 +34,13 @@ public static class ServerApp
         TimeSpan fakeDelay = TimeSpan.FromMilliseconds(double.Parse(builder.Configuration["fake-latency-ms"] ?? "0"));
 
         AccountConfig accountConfig = GameConfig.ParseAccounts(File.ReadAllText(Path.Combine(configDir, GameConfig.AccountsFile)));
-        builder.Services.AddSingleton(new GameServer(config, serverConfig, requireLogin: true));
         DatabaseInfo database = AddDatabase(builder, args);
+        builder.Services.AddSingleton(services => new GameServer(
+            config,
+            serverConfig,
+            requireLogin: true,
+            services.GetRequiredService<IItemStore>(),
+            services.GetRequiredService<ILoggerFactory>().CreateLogger("Game.Server.Inventory")));
         int hashIterations = int.Parse(builder.Configuration["password-iterations"] ?? PasswordHasher.DefaultIterations.ToString());
         builder.Services.AddSingleton(new PasswordHasher(hashIterations));
         if (codeSender == null)
@@ -63,6 +68,9 @@ public static class ServerApp
             characters.Kind,
             database.Schema == null ? " only while the server runs" : $", schema {database.Schema} at version {database.Version}");
         server.Start(app.Lifetime.ApplicationStopping);
+
+        // Leaving saves where a character stood; stopping the server must not lose it either.
+        app.Lifetime.ApplicationStopping.Register(() => server.SavePositionsAsync().Wait(TimeSpan.FromSeconds(10)));
         app.Logger.LogInformation(
             "{Channels} channels, {Players} players each, map {Map}, fake latency {Delay} ms each way",
             serverConfig.Channels,
@@ -135,6 +143,7 @@ public static class ServerApp
             Console.WriteLine($"No database (--db memory, or none in --db, DAKIEM_DB or \"db\" in {Database.LocalSettingsFile}); accounts and characters are kept in memory only.");
             builder.Services.AddSingleton<ICharacterStore, InMemoryCharacterStore>();
             builder.Services.AddSingleton<IAccountStore, InMemoryAccountStore>();
+            builder.Services.AddSingleton<IItemStore, InMemoryItemStore>();
             return new DatabaseInfo(null, 0);
         }
 
@@ -144,6 +153,7 @@ public static class ServerApp
         builder.Services.AddSingleton(source);
         builder.Services.AddSingleton(store);
         builder.Services.AddSingleton(Database.Accounts(source, schema));
+        builder.Services.AddSingleton(Database.Items(source, schema));
         return new DatabaseInfo(schema, version);
     }
 

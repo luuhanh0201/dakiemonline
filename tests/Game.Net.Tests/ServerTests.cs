@@ -124,95 +124,244 @@ public class ServerTests
 
     private int Item(string id) => config.Gear.ToList().FindIndex(item => item.Id == id);
 
-    [Fact]
-    public void PlayersStartInTheDefaultClothes()
+    /// <summary>Joins like a real connection: the bag is sent and the clothes set, then a tick runs.</summary>
+    private static async Task<Session> Enter(GameServer server, FakeConnection connection, byte[]? token = null)
     {
-        var server = new GameServer(config, TestConfig.Server(channels: 1, snapshotEvery: 1));
-        var first = new FakeConnection();
-        var second = new FakeConnection();
-        Join(server, first);
-        Join(server, second);
+        Session session = Join(server, connection, token);
+        await server.Inventory.AttachAsync(session, connection);
         TickAll(server);
+        return session;
+    }
 
-        Assert.Equal(GearRules.Default(config), first.Last<SnapshotMessage>().SelfAppearance);
-        Assert.Equal(GearRules.Default(config), Assert.Single(second.Last<SnapshotMessage>().Others).Appearance);
+    private long Owned(FakeConnection connection, string id) => connection.Last<InventoryMessage>().Items.Single(item => item.Item == Item(id)).Id;
+
+    private static Task Act(GameServer server, Session session, FakeConnection connection, ItemActionKind kind, long target, int to = 0) =>
+        server.Inventory.HandleAsync(session, connection, new ItemActionMessage(kind, target, to));
+
+    /// <summary>A pick-up waits for the channel to reserve the item, so ticks run while it waits.</summary>
+    private static async Task PickUp(GameServer server, Session session, FakeConnection connection, int groundId)
+    {
+        Task picking = Act(server, session, connection, ItemActionKind.PickUp, groundId);
+
+        for (int tick = 0; tick < 10 && !picking.IsCompleted; tick++)
+        {
+            TickAll(server);
+            await Task.Delay(1);
+        }
+
+        await picking;
+        TickAll(server);
     }
 
     [Fact]
-    public void OthersSeeWhatAPlayerPutsOn()
+    public async Task NewPlayerWearsTheClothSetAndCarriesTheRest()
+    {
+        var server = new GameServer(config, TestConfig.Server(channels: 1, snapshotEvery: 1));
+        var client = new FakeConnection();
+        await Enter(server, client);
+
+        InventoryMessage bag = client.Last<InventoryMessage>();
+        Assert.Equal(30, bag.BagSlots);
+        Assert.Equal(3, bag.Items.Count(item => item.Place == ItemPlace.Worn));
+        Assert.Equal(5, bag.Items.Count(item => item.Place == ItemPlace.Bag));
+        Assert.Equal(GearRules.Default(config), client.Last<SnapshotMessage>().SelfAppearance);
+    }
+
+    [Fact]
+    public async Task OthersSeeWhatAPlayerPutsOnFromTheBag()
     {
         var server = new GameServer(config, TestConfig.Server(channels: 1, snapshotEvery: 1));
         var first = new FakeConnection();
         var second = new FakeConnection();
-        Session a = Join(server, first);
-        Join(server, second);
-        TickAll(server);
+        Session a = await Enter(server, first);
+        await Enter(server, second);
 
-        a.Runner.Wear(a.PlayerId, first, new WearMessage(Item("gear.nodachi")));
-        a.Runner.Wear(a.PlayerId, first, new WearMessage(Item("gear.giap")));
+        await Act(server, a, first, ItemActionKind.Wear, Owned(first, "gear.nodachi"));
+        await Act(server, a, first, ItemActionKind.Wear, Owned(first, "gear.giap"));
         TickAll(server);
 
         var expected = new Appearance(Item("gear.nodachi"), Item("gear.giap"), Item("gear.vai"));
         Assert.Equal(expected, first.Last<SnapshotMessage>().SelfAppearance);
         Assert.Equal(expected, Assert.Single(second.Last<SnapshotMessage>().Others).Appearance);
-        Assert.Equal(GearRules.Default(config), second.Last<SnapshotMessage>().SelfAppearance);
+        Assert.Equal(InventoryProblem.None, first.Last<InventoryMessage>().Problem);
+        Assert.Contains(first.Last<InventoryMessage>().Items, item => item.Item == Item("gear.kiem") && item.Place == ItemPlace.Bag);
     }
 
     [Fact]
-    public void SomeoneWhoComesInLaterSeesWhatOthersWear()
+    public async Task SomeoneWhoComesInLaterSeesWhatOthersWear()
     {
         var server = new GameServer(config, TestConfig.Server(channels: 1, snapshotEvery: 1));
         var first = new FakeConnection();
-        Session a = Join(server, first);
-        TickAll(server);
-        a.Runner.Wear(a.PlayerId, first, new WearMessage(Item("gear.hakama")));
-        TickAll(server);
+        Session a = await Enter(server, first);
+        await Act(server, a, first, ItemActionKind.Wear, Owned(first, "gear.hakama"));
 
         var late = new FakeConnection();
-        Join(server, late);
+        await Enter(server, late);
         TickAll(server);
 
         Assert.Equal(Item("gear.hakama"), Assert.Single(late.Last<SnapshotMessage>().Others).Appearance.Pants);
     }
 
-    [Theory]
-    [InlineData("gear.non")]
-    [InlineData("gear.choang_ngan")]
-    [InlineData(null)]
-    public void ItemsThatDoNotChangeTheLookOrDoNotExistAreIgnored(string? id)
+    [Fact]
+    public async Task RefusedActionsSayWhyAndChangeNothing()
     {
         var server = new GameServer(config, TestConfig.Server(channels: 1, snapshotEvery: 1));
         var client = new FakeConnection();
-        Session session = Join(server, client);
-        TickAll(server);
+        Session session = await Enter(server, client);
+        IReadOnlyList<OwnedItem> before = client.Last<InventoryMessage>().Items;
 
-        session.Runner.Wear(session.PlayerId, client, new WearMessage(id == null ? 200 : Item(id)));
-        TickAll(server);
+        await Act(server, session, client, ItemActionKind.TakeOff, (long)GearSlot.Weapon);
+        Assert.Equal(InventoryProblem.MustStayWorn, client.Last<InventoryMessage>().Problem);
+        await Act(server, session, client, ItemActionKind.Drop, Owned(client, "gear.kiem"));
+        Assert.Equal(InventoryProblem.NotInBag, client.Last<InventoryMessage>().Problem);
+        await Act(server, session, client, ItemActionKind.Wear, 999_999);
+        Assert.Equal(InventoryProblem.NotFound, client.Last<InventoryMessage>().Problem);
+        await Act(server, session, client, ItemActionKind.TakeOff, 77);
+        Assert.Equal(InventoryProblem.BadSlot, client.Last<InventoryMessage>().Problem);
 
-        Assert.Equal(GearRules.Default(config), client.Last<SnapshotMessage>().SelfAppearance);
+        Assert.Equal(before, client.Last<InventoryMessage>().Items);
         Assert.False(client.Closed);
     }
 
     [Fact]
-    public void ClothesStayOnThroughAReconnect()
+    public async Task ADroppedItemLiesOnTheGroundUntilAnotherPlayerPicksItUp()
     {
         var server = new GameServer(config, TestConfig.Server(channels: 1, snapshotEvery: 1));
         var first = new FakeConnection();
-        Session session = Join(server, first);
+        var second = new FakeConnection();
+        Session a = await Enter(server, first);
+        Session b = await Enter(server, second);
+
+        await Act(server, a, first, ItemActionKind.Drop, Owned(first, "gear.nodachi"));
         TickAll(server);
-        session.Runner.Wear(session.PlayerId, first, new WearMessage(Item("gear.giap")));
+
+        Assert.DoesNotContain(first.Last<InventoryMessage>().Items, item => item.Item == Item("gear.nodachi"));
+        GroundItem lying = Assert.Single(second.Last<SnapshotMessage>().Ground);
+        Assert.Equal(Item("gear.nodachi"), lying.Item);
+        Assert.Equal(5f, lying.X);
+
+        await PickUp(server, b, second, lying.Id);
+
+        Assert.Equal(InventoryProblem.None, second.Last<InventoryMessage>().Problem);
+        Assert.Equal(2, second.Last<InventoryMessage>().Items.Count(item => item.Item == Item("gear.nodachi")));
+        Assert.Equal(5, second.Last<InventoryMessage>().Items.Where(item => item.Item == Item("gear.nodachi")).Max(item => item.Slot));
+        Assert.Empty(second.Last<SnapshotMessage>().Ground);
+    }
+
+    [Fact]
+    public async Task OnlyOneOfTwoPlayersGetsAnItem()
+    {
+        var server = new GameServer(config, TestConfig.Server(channels: 1, snapshotEvery: 1));
+        var first = new FakeConnection();
+        var second = new FakeConnection();
+        Session a = await Enter(server, first);
+        Session b = await Enter(server, second);
+        await Act(server, a, first, ItemActionKind.Drop, Owned(first, "gear.non"));
+        TickAll(server);
+        int groundId = Assert.Single(first.Last<SnapshotMessage>().Ground).Id;
+
+        Task byA = Act(server, a, first, ItemActionKind.PickUp, groundId);
+        Task byB = Act(server, b, second, ItemActionKind.PickUp, groundId);
+
+        for (int tick = 0; tick < 10 && !(byA.IsCompleted && byB.IsCompleted); tick++)
+        {
+            TickAll(server);
+            await Task.Delay(1);
+        }
+
+        await Task.WhenAll(byA, byB);
+        TickAll(server);
+
+        // B carries a hat from the start; A dropped theirs. Two hats in all means exactly one was picked up.
+        int hats = new[] { first, second }.Sum(client => client.Last<InventoryMessage>().Items.Count(item => item.Item == Item("gear.non")));
+        Assert.Equal(2, hats);
+        Assert.Equal(
+            new[] { InventoryProblem.None, InventoryProblem.Gone },
+            new[] { first.Last<InventoryMessage>().Problem, second.Last<InventoryMessage>().Problem }.OrderBy(problem => problem));
+    }
+
+    [Fact]
+    public async Task AnItemOutOfReachCannotBePickedUp()
+    {
+        var server = new GameServer(config, TestConfig.Server(channels: 1, snapshotEvery: 1));
+        var first = new FakeConnection();
+        var second = new FakeConnection();
+        Session a = await Enter(server, first);
+        Session b = await Enter(server, second);
+        await Act(server, a, first, ItemActionKind.Drop, Owned(first, "gear.giap"));
+
+        uint sequence = 0;
+        Drive(server, b, second, ref sequence, 1d, Ticks.PerSecond);
+        await PickUp(server, b, second, Assert.Single(second.Last<SnapshotMessage>().Ground).Id);
+
+        Assert.Equal(InventoryProblem.TooFar, second.Last<InventoryMessage>().Problem);
+        Assert.Single(second.Last<SnapshotMessage>().Ground);
+    }
+
+    [Fact]
+    public async Task ItemsOnTheGroundDisappearAfterFiveMinutes()
+    {
+        var server = new GameServer(config, TestConfig.Server(channels: 1, snapshotEvery: 1));
+        var client = new FakeConnection();
+        Session session = await Enter(server, client);
+        await Act(server, session, client, ItemActionKind.Drop, Owned(client, "gear.hakama"));
+        TickAll(server);
+        Assert.Single(client.Last<SnapshotMessage>().Ground);
+
+        TickAll(server, Ticks.FromSeconds(config.Bag.GroundLifetimeSec));
+
+        Assert.Empty(client.Last<SnapshotMessage>().Ground);
+    }
+
+    [Fact]
+    public async Task ClothesStayOnThroughAReconnect()
+    {
+        var server = new GameServer(config, TestConfig.Server(channels: 1, snapshotEvery: 1));
+        var first = new FakeConnection();
+        Session session = await Enter(server, first);
+        await Act(server, session, first, ItemActionKind.Wear, Owned(first, "gear.giap"));
         TickAll(server);
         session.Runner.Disconnected(session.PlayerId, first);
         TickAll(server);
 
         var again = new FakeConnection();
-        Join(server, again, first.Last<WelcomeMessage>().Token);
-        TickAll(server);
+        await Enter(server, again, first.Last<WelcomeMessage>().Token);
 
         Assert.True(again.Last<WelcomeMessage>().Resumed);
         Assert.Equal(Item("gear.giap"), again.Last<SnapshotMessage>().SelfAppearance.Armor);
+        Assert.Equal(first.Last<InventoryMessage>().Items, again.Last<InventoryMessage>().Items);
     }
 
+    [Fact]
+    public async Task ASavedCharacterComesBackWhereItLeftWithItsItems()
+    {
+        var store = new Game.Server.Db.InMemoryItemStore();
+        var server = new GameServer(config, TestConfig.Server(channels: 1, snapshotEvery: 1), items: store);
+        var identity = new PlayerIdentity(77, "Kiếm Khách");
+        var first = new FakeConnection();
+
+        Assert.Null(await server.Inventory.LoadAsync(identity.CharacterId));
+        Session session = server.Hello(new HelloMessage(Packet.ProtocolVersion, Array.Empty<byte>()), first, identity)!;
+        await server.Inventory.AttachAsync(session, first);
+        TickAll(server);
+        await Act(server, session, first, ItemActionKind.Drop, Owned(first, "gear.giap"));
+        uint sequence = 0;
+        Drive(server, session, first, ref sequence, 1d, Ticks.PerSecond);
+        double x = first.Last<SnapshotMessage>().Self.Movement.X;
+        session.Runner.Leave(session.PlayerId, first);
+        TickAll(server);
+
+        var again = new FakeConnection();
+        double? saved = await server.Inventory.LoadAsync(identity.CharacterId);
+        Session back = server.Hello(new HelloMessage(Packet.ProtocolVersion, Array.Empty<byte>()), again, identity, saved)!;
+        await server.Inventory.AttachAsync(back, again);
+        TickAll(server);
+
+        Assert.Equal(x, saved!.Value, 3);
+        Assert.Equal(x, again.Last<WelcomeMessage>().Self.Movement.X, 3);
+        Assert.DoesNotContain(again.Last<InventoryMessage>().Items, item => item.Item == Item("gear.giap"));
+        Assert.Equal(7, again.Last<InventoryMessage>().Items.Count);
+    }
     [Fact]
     public void ChannelsAreSeparate()
     {

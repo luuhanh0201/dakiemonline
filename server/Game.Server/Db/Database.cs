@@ -87,4 +87,6 @@ public static class Database
     }
 
     public static IAccountStore Accounts(NpgsqlDataSource source, string schema) => new PostgresAccountStore(source, schema);
+
+    public static IItemStore Items(NpgsqlDataSource source, string schema) => new PostgresItemStore(source, schema);
 }

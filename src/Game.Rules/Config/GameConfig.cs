@@ -53,6 +53,7 @@ namespace Game.Rules
             IReadOnlyList<SkillConfig> skills,
             PotionConfig potion,
             IReadOnlyList<GearItemConfig> gear,
+            BagConfig bag,
             BossConfig boss)
         {
             Character = character;
@@ -61,6 +62,7 @@ namespace Game.Rules
             Skills = skills;
             Potion = potion;
             Gear = gear;
+            Bag = bag;
             Boss = boss;
         }
 
@@ -83,6 +85,9 @@ namespace Game.Rules
         /// <summary>The equipment catalog, in file order; an item travels as its place in this list.</summary>
         public IReadOnlyList<GearItemConfig> Gear { get; }
 
+        /// <summary>Bag size, the ground and the starter items.</summary>
+        public BagConfig Bag { get; }
+
         public BossConfig Boss { get; }
 
         /// <summary>Takes the text of each file in <see cref="FileNames"/>, keyed by file name.</summary>
@@ -91,6 +96,7 @@ namespace Game.Rules
             ConfigObject items = Open(files, ItemsFile);
             PotionConfig potion = ParsePotion(items);
             IReadOnlyList<GearItemConfig> gear = ParseGear(items);
+            BagConfig bag = ParseBag(items, gear);
             items.RejectUnknownFields();
 
             return new GameConfig(
@@ -100,6 +106,7 @@ namespace Game.Rules
                 ParseSkills(Open(files, SkillsFile)),
                 potion,
                 gear,
+                bag,
                 ParseBoss(Open(files, BossFile)));
         }
 
@@ -172,6 +179,42 @@ namespace Game.Rules
         };
 
         private static readonly Regex ArtPattern = new Regex("^[a-z0-9]+$");
+
+        /// <summary>The bag. A slot travels as one byte; the starter items must fit in it.</summary>
+        private static BagConfig ParseBag(ConfigObject root, IReadOnlyList<GearItemConfig> gear)
+        {
+            ConfigObject item = root.Object("bag");
+            var bag = new BagConfig
+            {
+                Slots = PositiveInt(item, "slots"),
+                GroundLifetimeSec = item.Positive("groundLifetimeSec"),
+                PickupRange = item.Positive("pickupRange"),
+            };
+
+            ReadEntry(item, bag);
+
+            if (bag.Slots > byte.MaxValue)
+            {
+                throw item.Fail("slots", $"at most {byte.MaxValue}");
+            }
+
+            var starter = new List<int>();
+
+            foreach (string id in item.Strings("starterBag"))
+            {
+                int index = gear.ToList().FindIndex(entry => entry.Id == id);
+                starter.Add(index >= 0 ? index : throw item.Fail("starterBag", $"unknown item '{id}'"));
+            }
+
+            if (starter.Count > bag.Slots)
+            {
+                throw item.Fail("starterBag", $"has {starter.Count} items for {bag.Slots} slots");
+            }
+
+            bag.StarterBag = starter;
+            item.RejectUnknownFields();
+            return bag;
+        }
 
         /// <summary>The equipment catalog. An item travels as one byte, so there can be at most 255.</summary>
         private static IReadOnlyList<GearItemConfig> ParseGear(ConfigObject root)

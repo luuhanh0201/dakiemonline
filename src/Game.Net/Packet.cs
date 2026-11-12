@@ -7,7 +7,7 @@ namespace Game.Net
     public static class Packet
     {
         /// <summary>Raised whenever a packet's layout changes. Hello carries it; a mismatch is rejected.</summary>
-        public const ushort ProtocolVersion = 4;
+        public const ushort ProtocolVersion = 5;
 
         /// <summary>Anything larger is refused before reading, so a bad client cannot make the server allocate.</summary>
         public const int MaxSize = 4096;
@@ -41,7 +41,8 @@ namespace Game.Net
                 MessageType.Ping => PingMessage.Read(ref reader),
                 MessageType.Pong => PongMessage.Read(ref reader),
                 MessageType.Leave => new LeaveMessage(),
-                MessageType.Wear => WearMessage.Read(ref reader),
+                MessageType.ItemAction => ItemActionMessage.Read(ref reader),
+                MessageType.Inventory => InventoryMessage.Read(ref reader),
                 _ => throw new ProtocolException($"unknown message type {type}"),
             };
 

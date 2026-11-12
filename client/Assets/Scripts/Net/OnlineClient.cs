@@ -87,6 +87,12 @@ namespace DaKiem.Client.Net
         /// <summary>What the server last said this player wears; the default clothes until it says.</summary>
         public Appearance SelfAppearance { get; private set; }
 
+        /// <summary>The bag as the server last sent it; null until it arrives after joining.</summary>
+        public InventoryMessage Inventory { get; private set; }
+
+        /// <summary>Items lying on the ground in the channel, from the latest snapshot.</summary>
+        public IReadOnlyList<GroundItem> Ground { get; private set; } = Array.Empty<GroundItem>();
+
 
         public LatencyStats Latency { get; } = new LatencyStats();
         public double LastRoundTripMs { get; private set; }
@@ -151,17 +157,17 @@ namespace DaKiem.Client.Net
         }
 
         /// <summary>
-        /// Asks to put on the next item in a slot. Nothing changes here until the server accepts it and
-        /// a snapshot says so, so the player always sees what everyone else sees.
+        /// One thing done with the bag. Nothing changes here until the server answers with the whole
+        /// bag, and the clothes show in the next snapshot, so the player sees what everyone else sees.
         /// </summary>
-        public void WearNext(GearSlot slot)
+        public void ItemAction(ItemActionKind kind, long target, int to = 0)
         {
             if (Status != OnlineStatus.Playing)
             {
                 return;
             }
 
-            transport.Send(Packet.Encode(new WearMessage(GearRules.Next(config, SelfAppearance, slot))));
+            transport.Send(Packet.Encode(new ItemActionMessage(kind, target, to)));
         }
 
         /// <summary>Leaves on purpose: the server frees the place at once.</summary>
@@ -210,6 +216,9 @@ namespace DaKiem.Client.Net
                 case SnapshotMessage snapshot when Predictor != null:
                     OnSnapshot(snapshot);
                     break;
+                case InventoryMessage inventory:
+                    Inventory = inventory;
+                    break;
                 case PongMessage pong:
                     LastRoundTripMs = (uint)clock.ElapsedMilliseconds - pong.ClientTimeMs;
                     Latency.Add(LastRoundTripMs);
@@ -224,6 +233,7 @@ namespace DaKiem.Client.Net
                         RejectReason.NotLoggedIn => "Phiên đăng nhập đã hết. Hãy đăng nhập lại.",
                         RejectReason.NoCharacter => "Tài khoản chưa có nhân vật trên máy chủ này.",
                         RejectReason.LoggedInElsewhere => "Nhân vật vừa được đăng nhập ở máy khác.",
+                        RejectReason.Unavailable => "Máy chủ chưa đọc được dữ liệu nhân vật. Hãy thử lại sau ít phút.",
                         _ => "Server từ chối gói tin",
                     });
                     break;
@@ -240,6 +250,7 @@ namespace DaKiem.Client.Net
             TestRoom = welcome.TestRoom;
             Predictor = new Predictor(config, welcome.Self, welcome.LastInputSequence, welcome.TestRoom) { Boss = Boss };
             BossTrack = new RemoteTrack();
+            Ground = Array.Empty<GroundItem>();
             events.Clear();
             tracks.Clear();
             present.Clear();
@@ -256,6 +267,7 @@ namespace DaKiem.Client.Net
             UpdateBoss(snapshot);
             Predictor.Reconcile(snapshot.AckSequence, snapshot.Self);
             projectiles = snapshot.Projectiles;
+            Ground = snapshot.Ground;
 
             if (GearRules.IsValid(config, snapshot.SelfAppearance))
             {

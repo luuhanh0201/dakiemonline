@@ -48,6 +48,9 @@ public sealed class ChannelRunner
     private readonly List<NetEvent> pendingEvents = new();
     private readonly GameConfig config;
     private readonly int holdTicks;
+    private readonly Dictionary<int, LyingItem> ground = new();
+    private readonly ConcurrentDictionary<int, double> positions = new();
+    private int lastGroundId;
     private int currentTick;
 
     public ChannelRunner(int id, GameConfig config, ServerConfig server)
@@ -67,9 +70,13 @@ public sealed class ChannelRunner
     /// <summary>Called when a player's place is finally given up, from the tick thread.</summary>
     public event Action<int>? PlayerRemoved;
 
-    public void Join(Session session, IConnection connection)
+    /// <summary>Called just before a player's place is given up, with where they stood, so it can be saved.</summary>
+    public event Action<Session, double>? PlayerLeaving;
+
+    /// <param name="spawnX">Where a saved character last stood, or null for the spawn point.</param>
+    public void Join(Session session, IConnection connection, double? spawnX = null)
     {
-        inbox.Enqueue(() => AddPlayer(session, connection));
+        inbox.Enqueue(() => AddPlayer(session, connection, spawnX));
     }
 
     public void Resume(Session session, IConnection connection)
@@ -82,18 +89,76 @@ public sealed class ChannelRunner
         inbox.Enqueue(() => QueueInput(playerId, connection, input));
     }
 
-    /// <summary>Puts on an item if the catalog has it; anything else is ignored. Not saved until T045.</summary>
-    public void Wear(int playerId, IConnection connection, WearMessage wear)
+    /// <summary>What a player now wears, worked out from the bag by the inventory service.</summary>
+    public void SetAppearance(int playerId, Appearance appearance)
     {
         inbox.Enqueue(() =>
         {
-            if (slots.TryGetValue(playerId, out PlayerSlot? slot) && slot.Connection == connection
-                && GearRules.TryWear(config, slot.Appearance, wear.Item, out Appearance next))
+            if (slots.TryGetValue(playerId, out PlayerSlot? slot))
             {
-                slot.Appearance = next;
+                slot.Appearance = appearance;
             }
         });
     }
+
+    /// <summary>Puts an item that just left a player's bag on the ground at their feet.</summary>
+    public void Drop(int playerId, int item, int quantity)
+    {
+        inbox.Enqueue(() =>
+        {
+            RoomPlayer? player = Room.Find(playerId);
+            double x = player?.Movement.X ?? server.SpawnX;
+            double y = player?.Movement.Y ?? 0d;
+            int id = ++lastGroundId;
+            ground[id] = new LyingItem(id, item, quantity, x, y, Room.Tick + Ticks.FromSeconds(config.Bag.GroundLifetimeSec));
+        });
+    }
+
+    /// <summary>
+    /// Reserves an item on the ground for one player who stands near it, so a second player asking at
+    /// the same moment gets <see cref="InventoryProblem.Gone"/>. The result comes from the tick thread.
+    /// </summary>
+    public Task<(InventoryProblem Problem, int Item, int Quantity)> ClaimAsync(int playerId, int groundId)
+    {
+        var result = new TaskCompletionSource<(InventoryProblem, int, int)>(TaskCreationOptions.RunContinuationsAsynchronously);
+        inbox.Enqueue(() =>
+        {
+            RoomPlayer? player = Room.Find(playerId);
+
+            if (!ground.TryGetValue(groundId, out LyingItem? lying) || lying.ClaimedBy != 0)
+            {
+                result.SetResult((InventoryProblem.Gone, 0, 0));
+            }
+            else if (player == null || player.IsDead || !InventoryRules.InReach(config.Bag, player.Movement.X, player.Movement.Y, lying.X, lying.Y))
+            {
+                result.SetResult((InventoryProblem.TooFar, 0, 0));
+            }
+            else
+            {
+                lying.ClaimedBy = playerId;
+                result.SetResult((InventoryProblem.None, lying.Item, lying.Quantity));
+            }
+        });
+        return result.Task;
+    }
+
+    /// <summary>The claimed item is in the player's bag now; it leaves the ground.</summary>
+    public void Take(int groundId) => inbox.Enqueue(() => ground.Remove(groundId));
+
+    /// <summary>The claim failed (bag full, database down): the item is free for anyone again.</summary>
+    public void Release(int groundId)
+    {
+        inbox.Enqueue(() =>
+        {
+            if (ground.TryGetValue(groundId, out LyingItem? lying))
+            {
+                lying.ClaimedBy = 0;
+            }
+        });
+    }
+
+    /// <summary>Where each player in the channel stood at the last snapshot, for saving when the server stops.</summary>
+    public IReadOnlyDictionary<int, double> Positions => positions;
 
     public void Disconnected(int playerId, IConnection connection)
     {
@@ -130,6 +195,7 @@ public sealed class ChannelRunner
         CollectEvents();
         Volatile.Write(ref currentTick, Room.Tick);
         ExpireAwayPlayers();
+        ExpireGround();
 
         if (Room.Tick % server.SnapshotEveryTicks == 0)
         {
@@ -172,9 +238,9 @@ public sealed class ChannelRunner
         }
     }
 
-    private void AddPlayer(Session session, IConnection connection)
+    private void AddPlayer(Session session, IConnection connection, double? spawnX)
     {
-        RoomPlayer? player = Room.Join(session.PlayerId);
+        RoomPlayer? player = Room.Join(session.PlayerId, spawnX);
 
         if (player == null)
         {
@@ -275,8 +341,32 @@ public sealed class ChannelRunner
         if (slots.Remove(playerId, out PlayerSlot? slot))
         {
             slot.Connection?.Close();
+            PlayerLeaving?.Invoke(slot.Session, Room.Find(playerId)?.Movement.X ?? server.SpawnX);
             Room.Leave(playerId);
+            positions.TryRemove(playerId, out _);
             PlayerRemoved?.Invoke(playerId);
+        }
+    }
+
+    /// <summary>Items left lying too long disappear; one being picked up stays until that finishes.</summary>
+    private void ExpireGround()
+    {
+        List<int>? expired = null;
+
+        foreach (LyingItem lying in ground.Values)
+        {
+            if (lying.ClaimedBy == 0 && Room.Tick >= lying.ExpiresTick)
+            {
+                (expired ??= new List<int>()).Add(lying.Id);
+            }
+        }
+
+        if (expired != null)
+        {
+            foreach (int id in expired)
+            {
+                ground.Remove(id);
+            }
         }
     }
 
@@ -331,6 +421,16 @@ public sealed class ChannelRunner
         BossSnapshot boss = Room.Boss.Capture();
         var events = pendingEvents.ToArray();
         pendingEvents.Clear();
+        GroundItem[] lyingNow = ground.Values
+            .Where(lying => lying.ClaimedBy == 0)
+            .Take(byte.MaxValue)
+            .Select(lying => new GroundItem(lying.Id, lying.Item, (float)lying.X, (float)lying.Y))
+            .ToArray();
+
+        foreach (RoomPlayer player in Room.Players)
+        {
+            positions[player.Id] = player.Movement.X;
+        }
 
         foreach (PlayerSlot slot in slots.Values)
         {
@@ -349,9 +449,32 @@ public sealed class ChannelRunner
                 others,
                 projectiles,
                 events,
-                slot.Appearance);
+                slot.Appearance,
+                lyingNow);
             slot.Connection.Send(Packet.Encode(snapshot));
         }
+    }
+
+    /// <summary>An item on the ground; ClaimedBy is the player picking it up, 0 while it is free.</summary>
+    private sealed class LyingItem
+    {
+        public LyingItem(int id, int item, int quantity, double x, double y, int expiresTick)
+        {
+            Id = id;
+            Item = item;
+            Quantity = quantity;
+            X = x;
+            Y = y;
+            ExpiresTick = expiresTick;
+        }
+
+        public int Id { get; }
+        public int Item { get; }
+        public int Quantity { get; }
+        public double X { get; }
+        public double Y { get; }
+        public int ExpiresTick { get; }
+        public int ClaimedBy { get; set; }
     }
 
     private sealed class PlayerSlot

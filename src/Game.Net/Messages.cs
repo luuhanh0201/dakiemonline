@@ -14,7 +14,8 @@ namespace Game.Net
         Ping = 6,
         Pong = 7,
         Leave = 8,
-        Wear = 9,
+        ItemAction = 9,
+        Inventory = 10,
     }
 
     public enum RejectReason : byte
@@ -31,6 +32,9 @@ namespace Game.Net
 
         /// <summary>The same character came in from another device, which now has it.</summary>
         LoggedInElsewhere = 6,
+
+        /// <summary>The character's items could not be read right now; trying again later may work.</summary>
+        Unavailable = 7,
     }
 
     public abstract class NetMessage
@@ -446,12 +450,17 @@ namespace Game.Net
             IReadOnlyList<RemotePlayer> others,
             IReadOnlyList<RemoteProjectile> projectiles,
             IReadOnlyList<NetEvent> events,
-            Appearance selfAppearance = default)
+            Appearance selfAppearance = default,
+            IReadOnlyList<GroundItem>? ground = null)
         {
-            if (others.Count > byte.MaxValue || projectiles.Count > byte.MaxValue || events.Count > byte.MaxValue)
+            ground ??= Array.Empty<GroundItem>();
+
+            if (others.Count > byte.MaxValue || projectiles.Count > byte.MaxValue || events.Count > byte.MaxValue || ground.Count > byte.MaxValue)
             {
-                throw new ArgumentException("at most 255 players, projectiles and events");
+                throw new ArgumentException("at most 255 players, projectiles, events and items on the ground");
             }
+
+            Ground = ground;
 
             ServerTick = serverTick;
             AckSequence = ackSequence;
@@ -479,6 +488,9 @@ namespace Game.Net
 
         /// <summary>What this player wears, as the server last accepted it.</summary>
         public Appearance SelfAppearance { get; }
+
+        /// <summary>Items lying on the ground in the channel that nobody is picking up.</summary>
+        public IReadOnlyList<GroundItem> Ground { get; }
 
         internal override void Write(PacketWriter writer)
         {
@@ -527,6 +539,16 @@ namespace Game.Net
                 writer.Byte(checked((byte)item.HitIndex));
                 writer.Byte((byte)item.BossKind);
                 writer.Byte(checked((byte)item.BossAttack));
+            }
+
+            writer.Byte((byte)Ground.Count);
+
+            foreach (GroundItem item in Ground)
+            {
+                writer.Int32(item.Id);
+                writer.Byte(checked((byte)item.Item));
+                writer.Single(item.X);
+                writer.Single(item.Y);
             }
         }
 
@@ -583,7 +605,14 @@ namespace Game.Net
                 events[index] = new NetEvent(kind, player, combatKind, slot, amount, hitIndex, bossKind, reader.Byte());
             }
 
-            return new SnapshotMessage(tick, ack, self, boss, bossRespawn, others, projectiles, events, selfAppearance);
+            var ground = new GroundItem[reader.Byte()];
+
+            for (int index = 0; index < ground.Length; index++)
+            {
+                ground[index] = new GroundItem(reader.Int32(), reader.Byte(), reader.Single(), reader.Single());
+            }
+
+            return new SnapshotMessage(tick, ack, self, boss, bossRespawn, others, projectiles, events, selfAppearance, ground);
         }
 
         /// <summary>One byte per shown slot. The client checks the items against its own catalog.</summary>
@@ -607,8 +636,10 @@ namespace Game.Net
         internal static T Known<T>(byte value)
             where T : struct, Enum
         {
-            return Enum.IsDefined(typeof(T), (int)value)
-                ? (T)Enum.ToObject(typeof(T), value)
+            // Boxed in the enum's own type, so it works whatever the enum's underlying type is.
+            object boxed = Enum.ToObject(typeof(T), value);
+            return Enum.IsDefined(typeof(T), boxed)
+                ? (T)boxed
                 : throw new ProtocolException($"unknown {typeof(T).Name} {value}");
         }
     }
@@ -650,28 +681,133 @@ namespace Game.Net
         internal static PongMessage Read(ref PacketReader reader) => new PongMessage(reader.UInt32(), reader.UInt32());
     }
 
-    /// <summary>
-    /// Client → server: put on an item, given as its place in <see cref="GameConfig.Gear"/>. The server
-    /// checks it; the change shows in the next snapshot, for this player and for everyone around.
-    /// </summary>
-    public sealed class WearMessage : NetMessage
+    public enum ItemActionKind : byte
     {
-        public WearMessage(int item)
+        /// <summary>Target is the item's id.</summary>
+        Wear = 1,
+
+        /// <summary>Target is the <see cref="GearSlot"/>.</summary>
+        TakeOff = 2,
+
+        /// <summary>Target is the bag slot moved from, To the slot moved to.</summary>
+        Move = 3,
+
+        /// <summary>Target is the item's id; it falls at the player's feet.</summary>
+        Drop = 4,
+
+        /// <summary>Target is the id of the item on the ground.</summary>
+        PickUp = 5,
+    }
+
+    /// <summary>Client → server: one thing done with the bag. The server answers with the whole bag.</summary>
+    public sealed class ItemActionMessage : NetMessage
+    {
+        public ItemActionMessage(ItemActionKind kind, long target, int to = 0)
         {
-            if (item < 0 || item > byte.MaxValue)
+            if (to < 0 || to > byte.MaxValue)
             {
-                throw new ProtocolException($"item {item} does not fit in a byte");
+                throw new ProtocolException($"slot {to} does not fit in a byte");
             }
 
-            Item = item;
+            Kind = kind;
+            Target = target;
+            To = to;
         }
 
-        public override MessageType Type => MessageType.Wear;
+        public override MessageType Type => MessageType.ItemAction;
+        public ItemActionKind Kind { get; }
+        public long Target { get; }
+        public int To { get; }
+
+        internal override void Write(PacketWriter writer)
+        {
+            writer.Byte((byte)Kind);
+            writer.Int64(Target);
+            writer.Byte((byte)To);
+        }
+
+        internal static ItemActionMessage Read(ref PacketReader reader)
+        {
+            return new ItemActionMessage(SnapshotMessage.Known<ItemActionKind>(reader.Byte()), reader.Int64(), reader.Byte());
+        }
+    }
+
+    /// <summary>
+    /// Server → client: everything the player owns, after joining and after every bag action. Problem
+    /// says why the last action was refused, so the client can tell the player.
+    /// </summary>
+    public sealed class InventoryMessage : NetMessage
+    {
+        public InventoryMessage(int bagSlots, IReadOnlyList<OwnedItem> items, InventoryProblem problem = InventoryProblem.None)
+        {
+            if (items.Count > byte.MaxValue || bagSlots > byte.MaxValue)
+            {
+                throw new ArgumentException("at most 255 items and slots");
+            }
+
+            BagSlots = bagSlots;
+            Items = items;
+            Problem = problem;
+        }
+
+        public override MessageType Type => MessageType.Inventory;
+        public int BagSlots { get; }
+        public IReadOnlyList<OwnedItem> Items { get; }
+        public InventoryProblem Problem { get; }
+
+        internal override void Write(PacketWriter writer)
+        {
+            writer.Byte((byte)BagSlots);
+            writer.Byte((byte)Problem);
+            writer.Byte((byte)Items.Count);
+
+            foreach (OwnedItem item in Items)
+            {
+                writer.Int64(item.Id);
+                writer.Byte(checked((byte)item.Item));
+                writer.UInt16(checked((ushort)item.Quantity));
+                writer.Byte((byte)item.Place);
+                writer.Byte(checked((byte)item.Slot));
+            }
+        }
+
+        internal static InventoryMessage Read(ref PacketReader reader)
+        {
+            int slots = reader.Byte();
+            InventoryProblem problem = SnapshotMessage.Known<InventoryProblem>(reader.Byte());
+            var items = new OwnedItem[reader.Byte()];
+
+            for (int index = 0; index < items.Length; index++)
+            {
+                long id = reader.Int64();
+                int item = reader.Byte();
+                int quantity = reader.UInt16();
+                ItemPlace place = SnapshotMessage.Known<ItemPlace>(reader.Byte());
+                items[index] = new OwnedItem(id, item, quantity, place, reader.Byte());
+            }
+
+            return new InventoryMessage(slots, items, problem);
+        }
+    }
+
+    /// <summary>An item lying on the ground, for drawing and for picking up.</summary>
+    public readonly struct GroundItem
+    {
+        public GroundItem(int id, int item, float x, float y)
+        {
+            Id = id;
+            Item = item;
+            X = x;
+            Y = y;
+        }
+
+        public int Id { get; }
+
+        /// <summary>The item's place in <see cref="GameConfig.Gear"/>.</summary>
         public int Item { get; }
 
-        internal override void Write(PacketWriter writer) => writer.Byte((byte)Item);
-
-        internal static WearMessage Read(ref PacketReader reader) => new WearMessage(reader.Byte());
+        public float X { get; }
+        public float Y { get; }
     }
 
     /// <summary>Client → server: quitting on purpose, so the server frees the place at once.</summary>

@@ -38,11 +38,11 @@ namespace DaKiem.Client
         private OnlineView onlineView;
         private bool refillPressed;
 
-        // Practising alone, clothes change at once; online they change when the server says.
+        // Practising alone, clothes change at once with F1 to F3; online they come from the bag.
         private Appearance practiceAppearance;
 
-        // The test room's clothes buttons, folded away until "Thử đồ" opens them.
-        private bool gearButtonsOpen;
+        private InventoryScreen inventory;
+        private GroundView ground;
 
         private const string ServerAddressKey = "server.address";
         private const string ServerAddressFile = "server-address.txt";
@@ -107,6 +107,8 @@ namespace DaKiem.Client
             view = new WorldView(config.MapBoxes);
             character = new CharacterView();
             practiceAppearance = GearRules.Default(config);
+            inventory = InventoryScreen.Create(config, (kind, target, to) => online?.ItemAction(kind, target, to));
+            ground = new GroundView(config);
             hud.ShowBossBar(false);
             hud.SetVisible(false);
             serverAddress = PlayerPrefs.GetString(ServerAddressKey, DefaultServerAddress());
@@ -365,6 +367,8 @@ namespace DaKiem.Client
             online.Quit();
             online.Dispose();
             onlineView.Clear();
+            inventory.Close();
+            ground.Clear();
             online = null;
             onlineView = null;
             hud.ShowBossBar(false);
@@ -394,14 +398,26 @@ namespace DaKiem.Client
             }
 
 #if UNITY_STANDALONE || UNITY_WEBGL
-            GearSlot? changed = input.ConsumeGearChange();
-            if (changed.HasValue && !screens.Visible) online.WearNext(changed.Value);
+            // F1 to F3 only change clothes when practising alone; online the bag decides.
+            input.ConsumeGearChange();
+
+            if (UnityEngine.InputSystem.Keyboard.current?.eKey.wasPressedThisFrame == true && !screens.Visible && !inventory.Visible)
+            {
+                PickUpNearby();
+            }
+
+            if (UnityEngine.InputSystem.Keyboard.current?.bKey.wasPressedThisFrame == true && !screens.Visible)
+            {
+                inventory.Toggle(online.Inventory);
+            }
 #endif
 
+            inventory.Show(online.Inventory);
+            ground.Show(online.Ground);
             accumulator += frame;
 
-            // While an account screen is over the game, touches belong to it and the character stands still.
-            bool covered = screens.Visible;
+            // While an account screen or the bag is over the game, touches belong to it and the character stands still.
+            bool covered = screens.Visible || inventory.Visible;
 
             while (accumulator >= Ticks.DeltaSeconds)
             {
@@ -433,8 +449,8 @@ namespace DaKiem.Client
 
         private void DrawOnline(GUIStyle style)
         {
-            // OnGUI draws above every canvas, so nothing of it may show while an account screen is up.
-            if (screens.Visible)
+            // OnGUI draws above every canvas, so nothing of it may show while an account screen or the bag is up.
+            if (screens.Visible || inventory.Visible)
             {
                 return;
             }
@@ -483,42 +499,50 @@ namespace DaKiem.Client
                 refillPressed = true;
             }
 
-            DrawGearButtons(unit, button);
+            DrawBagButtons(unit, button);
             DrawNotice(small, shadow);
         }
 
         /// <summary>
-        /// The test room's clothes tryout (decided 12/11/2026): until there is an inventory, a phone has no
-        /// F1 to F3, so "Thử đồ" opens one button per shown slot. Real play never shows it.
+        /// "Túi đồ" opens the bag (B on a keyboard). Standing by an item on the ground, a button picks
+        /// it up (E on a keyboard), as GDD 15.1 keeps the bag in a menu rather than always open.
         /// </summary>
-        private void DrawGearButtons(float unit, GUIStyle button)
+        private void DrawBagButtons(float unit, GUIStyle button)
         {
-            if (!online.TestRoom || online.Status != OnlineStatus.Playing)
+            if (online.Status != OnlineStatus.Playing)
             {
                 return;
             }
 
-            float left = Screen.width - unit * 3.2f;
-            float top = unit * 3.5f;
-
-            if (GUI.Button(new Rect(left, top, unit * 3f, unit * 0.9f), gearButtonsOpen ? "Đóng thử đồ" : "Thử đồ", button))
+            if (GUI.Button(new Rect(Screen.width - unit * 3.2f, unit * 3.5f, unit * 3f, unit * 0.9f), "Túi đồ", button))
             {
-                gearButtonsOpen = !gearButtonsOpen;
+                inventory.Toggle(online.Inventory);
             }
 
-            if (!gearButtonsOpen)
+            GroundItem? near = Nearby();
+
+            if (near != null
+                && GUI.Button(new Rect(Screen.width / 2f - unit * 2.5f, Screen.height * 0.62f, unit * 5f, unit * 0.95f), $"Nhặt {config.Gear[near.Value.Item].Name}", button))
             {
-                return;
+                online.ItemAction(ItemActionKind.PickUp, near.Value.Id);
             }
+        }
 
-            string[] labels = { "Đổi vũ khí", "Đổi áo", "Đổi quần" };
+        private GroundItem? Nearby()
+        {
+            Predictor predictor = online.Predictor;
+            return predictor == null || predictor.Resources.IsDead
+                ? null
+                : ground.Reachable(online.Ground, predictor.Movement.X, predictor.Movement.Y);
+        }
 
-            for (int index = 0; index < GearRules.ShownSlots.Count; index++)
+        private void PickUpNearby()
+        {
+            GroundItem? near = Nearby();
+
+            if (near != null)
             {
-                if (GUI.Button(new Rect(left, top + unit * (1.1f + 1.1f * index), unit * 3f, unit * 0.9f), labels[index], button))
-                {
-                    online.WearNext(GearRules.ShownSlots[index]);
-                }
+                online.ItemAction(ItemActionKind.PickUp, near.Value.Id);
             }
         }
 

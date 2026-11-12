@@ -218,20 +218,63 @@ public class PacketTests
     }
 
     [Theory]
-    [InlineData(0)]
-    [InlineData(3)]
-    [InlineData(255)]
-    public void WearRoundTrips(int item)
+    [InlineData(ItemActionKind.Wear, 9_000_000_001L, 0)]
+    [InlineData(ItemActionKind.Move, 3L, 29)]
+    [InlineData(ItemActionKind.PickUp, 7L, 0)]
+    public void ItemActionRoundTrips(ItemActionKind kind, long target, int to)
     {
-        Assert.Equal(item, RoundTrip(new WearMessage(item)).Item);
+        ItemActionMessage action = RoundTrip(new ItemActionMessage(kind, target, to));
+
+        Assert.Equal(kind, action.Kind);
+        Assert.Equal(target, action.Target);
+        Assert.Equal(to, action.To);
     }
 
-    [Theory]
-    [InlineData(-1)]
-    [InlineData(256)]
-    public void WearOutsideAByteIsRefused(int item)
+    [Fact]
+    public void UnknownItemActionIsRejected()
     {
-        Assert.Throws<ProtocolException>(() => new WearMessage(item));
+        byte[] packet = Packet.Encode(new ItemActionMessage(ItemActionKind.Drop, 1));
+        packet[1] = 99;
+
+        Assert.Throws<ProtocolException>(() => Packet.Decode(packet));
+    }
+
+    [Fact]
+    public void InventoryRoundTrips()
+    {
+        var items = new[]
+        {
+            new OwnedItem(12_345_678_901L, 0, 1, ItemPlace.Worn, 0),
+            new OwnedItem(2, 9, 300, ItemPlace.Bag, 29),
+        };
+
+        InventoryMessage inventory = RoundTrip(new InventoryMessage(30, items, InventoryProblem.BagFull));
+
+        Assert.Equal(30, inventory.BagSlots);
+        Assert.Equal(InventoryProblem.BagFull, inventory.Problem);
+        Assert.Equal(items, inventory.Items);
+    }
+
+    [Fact]
+    public void ThirtyItemsFitInOnePacket()
+    {
+        var items = Enumerable.Range(0, 35).Select(index => new OwnedItem(index + 1, index % 10, 1, ItemPlace.Bag, index)).ToArray();
+
+        Assert.True(Packet.Encode(new InventoryMessage(30, items)).Length < 500);
+    }
+
+    [Fact]
+    public void SnapshotCarriesItemsOnTheGround()
+    {
+        SnapshotMessage source = FullSnapshot();
+        var ground = new[] { new GroundItem(4, 6, 7.5f, 0f), new GroundItem(5, 9, -1f, 2.25f) };
+        var withGround = new SnapshotMessage(source.ServerTick, source.AckSequence, source.Self, source.Boss, 0, source.Others, source.Projectiles, source.Events, source.SelfAppearance, ground);
+
+        SnapshotMessage read = RoundTrip(withGround);
+
+        Assert.Equal(2, read.Ground.Count);
+        Assert.Equal((5, 9, -1f, 2.25f), (read.Ground[1].Id, read.Ground[1].Item, read.Ground[1].X, read.Ground[1].Y));
+        Assert.Empty(RoundTrip(FullSnapshot()).Ground);
     }
 
     [Fact]
