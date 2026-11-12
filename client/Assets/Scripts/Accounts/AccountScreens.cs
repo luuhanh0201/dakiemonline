@@ -126,8 +126,8 @@ namespace DaKiem.Client.Accounts
             UiKit.Title(stage, "TÀI KHOẢN KHÁCH", 571f, 270f, 530f, 72f);
             Text text = UiKit.Place(UiKit.Label(stage, $"Bạn đang chơi bằng tài khoản khách <color=#F2C76E>{account.username}</color>. Gỡ game hoặc đổi máy là mất nhân vật. Hãy liên kết tài khoản để giữ lại.", 30, Color.white), 520f, 365f, 632f, 170f);
             text.lineSpacing = 1.1f;
-            UiKit.Place(UiKit.Button(stage, "ĐỂ SAU", UiKit.ButtonKind.Blue, Close), 520f, 575f, 290f, 82f);
-            UiKit.Place(UiKit.Button(stage, "LIÊN KẾT NGAY", UiKit.ButtonKind.Gold, () => ShowLink(inGame: true), 32), 830f, 570f, 322f, 92f);
+            UiKit.Place(UiKit.Button(stage, "ĐỂ SAU", UiKit.ButtonKind.Blue, Close), 530f, 562f, 280f, 82f);
+            UiKit.Place(UiKit.Button(stage, "LIÊN KẾT NGAY", UiKit.ButtonKind.Gold, () => ShowLink(inGame: true), 32), 830f, 557f, 310f, 92f);
         }
 
         public void Close()
@@ -219,19 +219,20 @@ namespace DaKiem.Client.Accounts
             Logo(stage, 360f, 20f, 950f);
             Frame(stage, 425f, 230f, 820f, 626f);
 
-            InputField username = Field(stage, "Tài khoản", InputField.ContentType.Standard, "icon_user", rules.UsernameMaxLength, 510f, 336f, 650f, 96f);
+            // Everything sits inside the frame's navy area (x 480-1190, y 336-823), clear of the gold bottom corners.
+            InputField username = Field(stage, "Tài khoản", InputField.ContentType.Standard, "icon_user", rules.UsernameMaxLength, 505f, 348f, 660f, 84f);
             username.text = AccountStorage.Username;
-            InputField password = Field(stage, "Mật khẩu", InputField.ContentType.Password, "icon_lock", rules.PasswordMaxLength, 510f, 448f, 650f, 96f);
+            InputField password = Field(stage, "Mật khẩu", InputField.ContentType.Password, "icon_lock", rules.PasswordMaxLength, 505f, 442f, 660f, 84f);
             username.onSubmit.AddListener(_ => { password.Select(); password.ActivateInputField(); });
             password.onSubmit.AddListener(_ => Login(username, password));
 
-            Toggle remember = UiKit.Place(UiKit.Check(stage, "Ghi nhớ đăng nhập", AccountStorage.Remember, 32), 514f, 552f, 390f, 84f);
+            Toggle remember = UiKit.Place(UiKit.Check(stage, "Ghi nhớ đăng nhập", AccountStorage.Remember, 32), 509f, 532f, 390f, 64f);
             remember.onValueChanged.AddListener(on => AccountStorage.Remember = on);
-            UiKit.Place(UiKit.Button(stage, "Quên mật khẩu?", UiKit.ButtonKind.Link, ShowForgot, 32), 914f, 552f, 258f, 84f);
+            UiKit.Place(UiKit.Button(stage, "Quên mật khẩu?", UiKit.ButtonKind.Link, ShowForgot, 32), 914f, 532f, 252f, 64f);
 
-            UiKit.Place(UiKit.Button(stage, "ĐĂNG NHẬP", UiKit.ButtonKind.Gold, () => Login(username, password), 50), 508f, 640f, 658f, 104f);
-            UiKit.Place(UiKit.Button(stage, "ĐĂNG KÝ", UiKit.ButtonKind.Blue, ShowRegister, 38), 508f, 750f, 318f, 86f);
-            UiKit.Place(UiKit.Button(stage, "CHƠI NGAY", UiKit.ButtonKind.Blue, PlayNow, 38), 848f, 750f, 318f, 86f);
+            UiKit.Place(UiKit.Button(stage, "ĐĂNG NHẬP", UiKit.ButtonKind.Gold, () => Login(username, password), 50), 505f, 604f, 660f, 96f);
+            UiKit.Place(UiKit.Button(stage, "ĐĂNG KÝ", UiKit.ButtonKind.Blue, ShowRegister, 38), 520f, 712f, 310f, 84f);
+            UiKit.Place(UiKit.Button(stage, "CHƠI NGAY", UiKit.ButtonKind.Blue, PlayNow, 38), 843f, 712f, 310f, 84f);
 
             string guestNote = string.IsNullOrEmpty(AccountStorage.GuestSecret) ? null : "Tài khoản khách trên máy: bấm Chơi ngay.\nLiên kết để giữ nhân vật khi đổi máy.";
             message = Message(stage, note ?? guestNote, 460f, 864f, 750f, 70f, note == null && guestNote != null ? UiKit.Gold : (Color?)null);
@@ -369,7 +370,8 @@ namespace DaKiem.Client.Accounts
                 Logo(stage, 548f, 4f, 535f);
             }
 
-            Frame(stage, 415f, 120f, 840f, 808f);
+            // Navy area x 470-1200, y 226-874; the title plaque and the X sit on the beam above it.
+            Frame(stage, 415f, 120f, 840f, 787f);
             UiKit.Title(stage, title, 570f, 188f, 528f, 74f);
             UiKit.Close(stage, 1116f, 172f, 80f, closed);
             return stage;
@@ -378,19 +380,21 @@ namespace DaKiem.Client.Accounts
         private AccountForm Form(RectTransform stage, bool withUsername, string purpose)
         {
             var form = new AccountForm();
-            float top = withUsername ? 282f : 350f;
+            // Five rows fill y 274-694; without the username the four rows sit centred in the same space.
+            const float row = 86f;
+            float top = withUsername ? 274f : 318f;
 
             if (withUsername)
             {
-                form.UsernameBox = Field(stage, $"Tài khoản ({rules.UsernameMinLength}–{rules.UsernameMaxLength} ký tự)", InputField.ContentType.Standard, "icon_user", rules.UsernameMaxLength, 505f, top, 662f, 84f);
-                top += 94f;
+                form.UsernameBox = Field(stage, $"Tài khoản ({rules.UsernameMinLength}–{rules.UsernameMaxLength} ký tự)", InputField.ContentType.Standard, "icon_user", rules.UsernameMaxLength, 505f, top, 662f, 76f);
+                top += row;
             }
 
-            form.Password = Field(stage, purpose == CodePurposes.Reset ? "Mật khẩu mới" : "Mật khẩu", InputField.ContentType.Password, "icon_lock", rules.PasswordMaxLength, 505f, top, 662f, 84f);
-            form.Again = Field(stage, "Nhập lại mật khẩu", InputField.ContentType.Password, "icon_lock", rules.PasswordMaxLength, 505f, top + 94f, 662f, 84f);
-            form.Contact = Field(stage, "Email hoặc số điện thoại", InputField.ContentType.EmailAddress, "icon_mail", 254, 505f, top + 188f, 662f, 84f);
-            form.Code = Field(stage, "Mã xác nhận", InputField.ContentType.IntegerNumber, "icon_shield", rules.CodeDigits, 505f, top + 282f, 430f, 84f);
-            sendCodeButton = UiKit.Place(UiKit.Button(stage, "GỬI MÃ", UiKit.ButtonKind.BlueSmall, () => SendCode(form, purpose), 30), 947f, top + 280f, 224f, 88f);
+            form.Password = Field(stage, purpose == CodePurposes.Reset ? "Mật khẩu mới" : "Mật khẩu", InputField.ContentType.Password, "icon_lock", rules.PasswordMaxLength, 505f, top, 662f, 76f);
+            form.Again = Field(stage, "Nhập lại mật khẩu", InputField.ContentType.Password, "icon_lock", rules.PasswordMaxLength, 505f, top + row, 662f, 76f);
+            form.Contact = Field(stage, "Email hoặc số điện thoại", InputField.ContentType.EmailAddress, "icon_mail", 254, 505f, top + 2f * row, 662f, 76f);
+            form.Code = Field(stage, "Mã xác nhận", InputField.ContentType.IntegerNumber, "icon_shield", rules.CodeDigits, 505f, top + 3f * row, 430f, 76f);
+            sendCodeButton = UiKit.Place(UiKit.Button(stage, "GỬI MÃ", UiKit.ButtonKind.BlueSmall, () => SendCode(form, purpose), 30), 947f, top + 3f * row - 2f, 220f, 82f);
             InputField[] fields = withUsername ? new[] { form.UsernameBox, form.Password, form.Again, form.Contact, form.Code } : new[] { form.Password, form.Again, form.Contact, form.Code };
             for (int i = 0; i < fields.Length - 1; i++)
             {
@@ -407,7 +411,7 @@ namespace DaKiem.Client.Accounts
         {
             RectTransform stage = Dialog("ĐĂNG KÝ TÀI KHOẢN", false, () => ShowLogin(null));
             AccountForm form = Form(stage, withUsername: true, CodePurposes.Register);
-            message = Message(stage, $"Tài khoản: chữ thường, số, _. Mật khẩu: {rules.PasswordMinLength}–{rules.PasswordMaxLength} ký tự, không có khoảng trắng.", 485f, 748f, 702f, 64f);
+            message = Message(stage, $"Tài khoản: chữ thường, số, _. Mật khẩu: {rules.PasswordMinLength}–{rules.PasswordMaxLength} ký tự, không có khoảng trắng.", 485f, 702f, 702f, 64f);
             Button submit = UiKit.Place(UiKit.Button(stage, "ĐĂNG KÝ", UiKit.ButtonKind.Gold, () =>
             {
                 if (form.Check(rules, this))
@@ -418,7 +422,7 @@ namespace DaKiem.Client.Accounts
                         SignedIn(reply);
                     }, error => form.Refused(error, this)));
                 }
-            }, 48), 522f, 814f, 628f, 98f);
+            }, 48), 522f, 774f, 628f, 90f);
             form.Code.onSubmit.AddListener(_ => { if (submit.IsInteractable()) submit.onClick.Invoke(); });
             Corners(showTools: false);
         }
@@ -428,7 +432,7 @@ namespace DaKiem.Client.Accounts
             Action back = inGame ? Close : () => ShowServers(null);
             RectTransform stage = Dialog("LIÊN KẾT TÀI KHOẢN", inGame, back);
             AccountForm form = Form(stage, withUsername: true, CodePurposes.Link);
-            message = Message(stage, $"Giữ nguyên nhân vật. Mật khẩu: {rules.PasswordMinLength}–{rules.PasswordMaxLength} ký tự, không có khoảng trắng.", 485f, 748f, 702f, 64f);
+            message = Message(stage, $"Giữ nguyên nhân vật. Mật khẩu: {rules.PasswordMinLength}–{rules.PasswordMaxLength} ký tự, không có khoảng trắng.", 485f, 702f, 702f, 64f);
             Button submit = UiKit.Place(UiKit.Button(stage, "LIÊN KẾT", UiKit.ButtonKind.Gold, () =>
             {
                 if (form.Check(rules, this))
@@ -441,7 +445,7 @@ namespace DaKiem.Client.Accounts
                         Done($"Đã liên kết. Từ nay đăng nhập bằng tài khoản <color=#F2C76E>{reply.account.username}</color>.", inGame);
                     }, error => form.Refused(error, this)));
                 }
-            }, 48), 522f, 814f, 628f, 98f);
+            }, 48), 522f, 774f, 628f, 90f);
             form.Code.onSubmit.AddListener(_ => { if (submit.IsInteractable()) submit.onClick.Invoke(); });
 
             if (!inGame)
@@ -454,7 +458,7 @@ namespace DaKiem.Client.Accounts
         {
             RectTransform stage = Dialog("QUÊN MẬT KHẨU", false, () => ShowLogin(null));
             AccountForm form = Form(stage, withUsername: false, CodePurposes.Reset);
-            message = Message(stage, $"Dùng email/SĐT đã đăng ký. Mật khẩu mới: {rules.PasswordMinLength}–{rules.PasswordMaxLength} ký tự, không có khoảng trắng.", 485f, 748f, 702f, 64f);
+            message = Message(stage, $"Dùng email/SĐT đã đăng ký. Mật khẩu mới: {rules.PasswordMinLength}–{rules.PasswordMaxLength} ký tự, không có khoảng trắng.", 485f, 702f, 702f, 64f);
             Button submit = UiKit.Place(UiKit.Button(stage, "ĐỔI MẬT KHẨU", UiKit.ButtonKind.Gold, () =>
             {
                 if (form.Check(rules, this))
@@ -465,7 +469,7 @@ namespace DaKiem.Client.Accounts
                         ShowPasswordReset();
                     }));
                 }
-            }, 48), 522f, 814f, 628f, 98f);
+            }, 48), 522f, 774f, 628f, 90f);
             form.Code.onSubmit.AddListener(_ => { if (submit.IsInteractable()) submit.onClick.Invoke(); });
             Corners(showTools: false);
         }
@@ -525,33 +529,35 @@ namespace DaKiem.Client.Accounts
             chosenServer = null;
             RectTransform stage = Open(inGame: false);
             Logo(stage, 440f, 6f, 790f);
-            Frame(stage, 345f, 160f, 1035f, 598f);
-            UiKit.Title(stage, "CHỌN MÁY CHỦ", 600f, 232f, 530f, 76f);
+            // Centred on the screen (the mock-up sat 27 to the right). Navy area x 373-1298, y 266-725;
+            // the account row and VÀO GAME stand below the frame, as in the mock-up.
+            Frame(stage, 318f, 160f, 1035f, 598f);
+            UiKit.Title(stage, "CHỌN MÁY CHỦ", 573f, 232f, 530f, 76f);
 
-            var inset = UiKit.Place(UiKit.Rect("Tabs", stage).gameObject.AddComponent<Image>(), 398f, 314f, 184f, 404f);
+            var inset = UiKit.Place(UiKit.Rect("Tabs", stage).gameObject.AddComponent<Image>(), 384f, 314f, 182f, 376f);
             inset.color = new Color(0f, 0f, 0f, 0.22f);
             inset.raycastTarget = false;
-            UiKit.Place(UiKit.Button(stage, "Gần đây", recentTab ? UiKit.ButtonKind.Gold : UiKit.ButtonKind.Blue, () => SwitchTab(true), 34), 405f, 342f, 172f, 72f);
-            UiKit.Place(UiKit.Button(stage, "Tất cả", recentTab ? UiKit.ButtonKind.Blue : UiKit.ButtonKind.Gold, () => SwitchTab(false), 34), 405f, 438f, 172f, 72f);
+            UiKit.Place(UiKit.Button(stage, "Gần đây", recentTab ? UiKit.ButtonKind.Gold : UiKit.ButtonKind.Blue, () => SwitchTab(true), 34), 389f, 342f, 172f, 72f);
+            UiKit.Place(UiKit.Button(stage, "Tất cả", recentTab ? UiKit.ButtonKind.Blue : UiKit.ButtonKind.Gold, () => SwitchTab(false), 34), 389f, 438f, 172f, 72f);
 
             RectTransform grid = UiKit.Rect("Servers", stage);
             UiKit.Fill(grid);
-            UiKit.Place(UiKit.Label(grid, "Đang tải danh sách máy chủ...", 30, Color.white), 597f, 335f, 725f, 105f);
+            UiKit.Place(UiKit.Label(grid, "Đang tải danh sách máy chủ...", 30, Color.white), 584f, 335f, 698f, 105f);
 
             string who = account == null ? string.Empty : $"Tài khoản: {account.username}";
-            UiKit.Place(UiKit.Label(stage, who, 30, Color.white, TextAnchor.MiddleLeft), 398f, 770f, 480f, 48f);
-            UiKit.Place(UiKit.Button(stage, "Đổi tài khoản", UiKit.ButtonKind.BlueSmall, LogOut, 30), 640f, 822f, 238f, 80f);
+            UiKit.Place(UiKit.Label(stage, who, 30, Color.white, TextAnchor.MiddleLeft), 371f, 770f, 480f, 48f);
+            UiKit.Place(UiKit.Button(stage, "Đổi tài khoản", UiKit.ButtonKind.BlueSmall, LogOut, 30), 613f, 822f, 238f, 80f);
 
             if (account != null && account.IsGuest)
             {
-                UiKit.Place(UiKit.Button(stage, "Liên kết", UiKit.ButtonKind.BlueSmall, () => ShowLink(inGame: false), 32), 398f, 822f, 222f, 80f);
+                UiKit.Place(UiKit.Button(stage, "Liên kết", UiKit.ButtonKind.BlueSmall, () => ShowLink(inGame: false), 32), 371f, 822f, 222f, 80f);
             }
 
-            enterButton = UiKit.Place(UiKit.Button(stage, "VÀO GAME", UiKit.ButtonKind.Gold, EnterChosen, 54), 890f, 776f, 515f, 114f);
+            enterButton = UiKit.Place(UiKit.Button(stage, "VÀO GAME", UiKit.ButtonKind.Gold, EnterChosen, 54), 863f, 776f, 515f, 114f);
             enterButton.interactable = false;
 
             string guestNote = account != null && account.IsGuest ? "Liên kết để giữ nhân vật khi đổi máy." : null;
-            message = Message(stage, note ?? guestNote, 455f, 902f, 900f, 38f, note == null && guestNote != null ? UiKit.Gold : (Color?)null);
+            message = Message(stage, note ?? guestNote, 385f, 902f, 900f, 38f, note == null && guestNote != null ? UiKit.Gold : (Color?)null);
             Corners(showTools: false);
             Run(api.Servers(reply =>
             {
@@ -562,8 +568,8 @@ namespace DaKiem.Client.Accounts
             }, error =>
             {
                 foreach (Transform child in grid) { child.gameObject.SetActive(false); Destroy(child.gameObject); }
-                UiKit.Place(UiKit.Label(grid, "Không tải được danh sách máy chủ.", 32, Color.white), 597f, 350f, 725f, 100f);
-                UiKit.Place(UiKit.Button(grid, "THỬ LẠI", UiKit.ButtonKind.Blue, () => ShowServers(null), 34), 770f, 470f, 350f, 92f);
+                UiKit.Place(UiKit.Label(grid, "Không tải được danh sách máy chủ.", 32, Color.white), 584f, 350f, 698f, 100f);
+                UiKit.Place(UiKit.Button(grid, "THỬ LẠI", UiKit.ButtonKind.Blue, () => ShowServers(null), 34), 758f, 470f, 350f, 92f);
                 Refused(error);
             }), quiet: true);
         }
@@ -588,13 +594,13 @@ namespace DaKiem.Client.Accounts
 
             if (shown.Length == 0)
             {
-                UiKit.Place(UiKit.Label(grid, "Chưa có máy chủ nào mở.", 30, Color.white), 597f, 335f, 725f, 105f);
+                UiKit.Place(UiKit.Label(grid, "Chưa có máy chủ nào mở.", 30, Color.white), 584f, 335f, 698f, 105f);
                 return;
             }
 
             for (int i = 0; i < shown.Length && i < 6; i++)
             {
-                float left = i % 2 == 0 ? 597f : 970f;
+                float left = i % 2 == 0 ? 584f : 942f;
                 float top = 335f + i / 2 * 125f;
                 ServerCard(grid, shown[i], left, top);
             }
@@ -603,7 +609,7 @@ namespace DaKiem.Client.Accounts
         private void ServerCard(RectTransform grid, ServerInfo server, float left, float top)
         {
             bool chosen = chosenServer != null && chosenServer.number == server.number;
-            Image card = UiKit.Place(UiKit.Image(grid, chosen ? "card_selected" : "card", sliced: true), left, top, 353f, 105f);
+            Image card = UiKit.Place(UiKit.Image(grid, chosen ? "card_selected" : "card", sliced: true), left, top, 340f, 105f);
             card.pixelsPerUnitMultiplier = 2.2f;
             card.raycastTarget = true;
             var button = card.gameObject.AddComponent<Button>();
@@ -620,17 +626,17 @@ namespace DaKiem.Client.Accounts
             }
 
             // Stops short of the "MỚI" ribbon in the top right corner.
-            Text title = UiKit.Place(UiKit.Label(card.transform, $"{server.number} · {server.name}", 30, chosen ? UiKit.Navy : Color.white, TextAnchor.MiddleLeft, outlined: !chosen), 28f, 10f, server.isNew ? 245f : 305f, 42f);
+            Text title = UiKit.Place(UiKit.Label(card.transform, $"{server.number} · {server.name}", 30, chosen ? UiKit.Navy : Color.white, TextAnchor.MiddleLeft, outlined: !chosen), 28f, 10f, server.isNew ? 232f : 292f, 42f);
             UiKit.FitOneLine(title, 26);
             string dot = server.status == "full" ? "dot_gray" : server.status == "busy" ? "dot_yellow" : "dot_green";
             string status = server.status == "full" ? "Đầy" : server.status == "busy" ? "Đông" : "Tốt";
             UiKit.Place(UiKit.Image(card.transform, dot), 32f, 58f, 30f, 30f);
             string character = string.IsNullOrEmpty(server.character) ? "chưa có nhân vật" : server.character;
-            UiKit.Place(UiKit.Label(card.transform, $"{status} <size=22>· {character}</size>", 28, chosen ? UiKit.Navy : Color.white, TextAnchor.MiddleLeft, outlined: !chosen), 72f, 52f, 270f, 42f);
+            UiKit.Place(UiKit.Label(card.transform, $"{status} <size=22>· {character}</size>", 28, chosen ? UiKit.Navy : Color.white, TextAnchor.MiddleLeft, outlined: !chosen), 72f, 52f, 258f, 42f);
 
             if (server.isNew)
             {
-                Image ribbon = UiKit.Place(UiKit.Image(card.transform, "ribbon"), 270f, -14f, 90f, 54f);
+                Image ribbon = UiKit.Place(UiKit.Image(card.transform, "ribbon"), 257f, -14f, 90f, 54f);
                 UiKit.Place(UiKit.Label(ribbon.transform, "MỚI", 22, Color.white), 0f, 4f, 90f, 40f);
             }
         }
@@ -659,11 +665,12 @@ namespace DaKiem.Client.Accounts
             RectTransform stage = Open(inGame: false);
             Logo(stage, 548f, 4f, 535f);
             Frame(stage, 455f, 160f, 760f, 600f);
-            UiKit.Title(stage, "TẠO NHÂN VẬT", 571f, 228f, 480f, 74f);
+            // Navy area x 510-1160, y 266-727.
+            UiKit.Title(stage, "TẠO NHÂN VẬT", 595f, 228f, 480f, 74f);
             UiKit.Close(stage, 1078f, 212f, 80f, () => ShowServers(null));
-            UiKit.Place(UiKit.Label(stage, $"Máy chủ {server.number} - {server.name}. Mỗi tài khoản có một nhân vật trên mỗi máy chủ.", 26, Color.white), 520f, 318f, 632f, 70f);
-            InputField name = Field(stage, $"Tên nhân vật ({rules.CharacterNameMinLength}–{rules.CharacterNameMaxLength} ký tự)", InputField.ContentType.Standard, "icon_user", rules.CharacterNameMaxLength, 520f, 400f, 632f, 96f);
-            message = Message(stage, "Dùng chữ hoặc số, có thể có dấu tiếng Việt. Không có khoảng trắng.", 520f, 508f, 632f, 86f);
+            UiKit.Place(UiKit.Label(stage, $"Máy chủ {server.number} - {server.name}. Mỗi tài khoản có một nhân vật trên mỗi máy chủ.", 26, Color.white), 522f, 318f, 626f, 70f);
+            InputField name = Field(stage, $"Tên nhân vật ({rules.CharacterNameMinLength}–{rules.CharacterNameMaxLength} ký tự)", InputField.ContentType.Standard, "icon_user", rules.CharacterNameMaxLength, 522f, 400f, 626f, 96f);
+            message = Message(stage, "Dùng chữ hoặc số, có thể có dấu tiếng Việt. Không có khoảng trắng.", 522f, 508f, 626f, 86f);
             Button submit = UiKit.Place(UiKit.Button(stage, "TẠO NHÂN VẬT", UiKit.ButtonKind.Gold, () =>
             {
                 if (!Ready(name))
@@ -681,7 +688,7 @@ namespace DaKiem.Client.Accounts
                 }
 
                 Run(api.CreateCharacter(server.number, AccountRules.NormalizeCharacterName(name.text), reply => Enter(reply.character.name), error => Refused(error, null, null, null, null, name)));
-            }, 52), 546f, 610f, 578f, 100f);
+            }, 52), 556f, 606f, 558f, 94f);
             name.onSubmit.AddListener(_ => { if (submit.IsInteractable()) submit.onClick.Invoke(); });
             Corners(showTools: false);
         }
@@ -732,8 +739,8 @@ namespace DaKiem.Client.Accounts
             RectTransform stage = Open(inGame: true);
             Frame(stage, 486f, 230f, 700f, 440f);
             UiKit.Title(stage, "ĐÃ LIÊN KẾT", 571f, 298f, 530f, 72f);
-            UiKit.Place(UiKit.Label(stage, text, 30, UiKit.Green), 540f, 390f, 592f, 120f);
-            UiKit.Place(UiKit.Button(stage, "CHƠI TIẾP", UiKit.ButtonKind.Gold, Close, 46), 600f, 540f, 472f, 94f);
+            UiKit.Place(UiKit.Label(stage, text, 30, UiKit.Green), 552f, 390f, 568f, 110f);
+            UiKit.Place(UiKit.Button(stage, "CHƠI TIẾP", UiKit.ButtonKind.Gold, Close, 46), 610f, 524f, 452f, 90f);
         }
 
         // ---- Shared pieces -----------------------------------------------------------------

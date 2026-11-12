@@ -168,7 +168,14 @@ public static class ServerApp
         {
             FileProvider = files,
             ContentTypeProvider = types,
-            OnPrepareResponse = context => MarkGzip(context.Context.Response, context.File.Name, types),
+            OnPrepareResponse = context =>
+            {
+                // Every build reuses the same file names, so a browser must check each file again before using
+                // its copy; a cached framework with a fresh wasm fails with "function signature mismatch".
+                // Unchanged files still come back as a short 304.
+                context.Context.Response.Headers.CacheControl = "no-cache";
+                MarkGzip(context.Context.Response, context.File.Name, types);
+            },
         });
         app.Logger.LogInformation("Serving the web build from {Dir}", webDir);
     }

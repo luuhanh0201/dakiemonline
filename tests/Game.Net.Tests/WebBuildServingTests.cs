@@ -55,4 +55,17 @@ public sealed class WebBuildServingTests : IAsyncLifetime
         Assert.Equal("gzip", Assert.Single(response.Content.Headers.ContentEncoding));
         Assert.Equal(type, response.Content.Headers.ContentType!.MediaType);
     }
+
+    [Theory]
+    [InlineData("/")]
+    [InlineData("/Build/Web.wasm.gz")]
+    [InlineData("/Build/Web.framework.js.gz")]
+    [InlineData("/Build/Web.data.gz")]
+    public async Task BrowsersCheckEveryFileAgainBeforeReusingIt(string path)
+    {
+        using HttpResponseMessage response = await http.GetAsync(path);
+
+        response.EnsureSuccessStatusCode();
+        Assert.True(response.Headers.CacheControl!.NoCache, $"{path} must be sent with Cache-Control: no-cache");
+    }
 }

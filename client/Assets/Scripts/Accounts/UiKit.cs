@@ -110,6 +110,20 @@ namespace DaKiem.Client.Accounts
             return stage;
         }
 
+        // The navy area of the "panel" art when it is drawn with pixelsPerUnitMultiplier 1.75, measured
+        // from its pixels: the side wood, the roof beam and the bottom wood, plus the gold bottom corners.
+        public const float FrameSide = 55f;
+        public const float FrameTop = 106f;
+        public const float FrameBottom = 33f;
+        public const float FrameCornerWidth = 92f;
+        public const float FrameCornerHeight = 62f;
+
+        /// <summary>The part of a frame placed at a mock-up rectangle (top-left origin, y down) where content belongs.</summary>
+        public static UnityEngine.Rect FrameInner(UnityEngine.Rect frame)
+        {
+            return UnityEngine.Rect.MinMaxRect(frame.xMin + FrameSide, frame.yMin + FrameTop, frame.xMax - FrameSide, frame.yMax - FrameBottom);
+        }
+
         /// <summary>Puts a child of the stage at a mock-up rectangle given by its top-left corner and size.</summary>
         public static T Place<T>(T part, float left, float top, float width, float height)
             where T : Component
