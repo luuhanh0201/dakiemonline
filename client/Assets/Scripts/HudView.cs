@@ -145,6 +145,17 @@ namespace DaKiem.Client
             bossHealthFill.parent.gameObject.SetActive(visible);
         }
 
+        /// <summary>Keeps the HUD's scale right after the window or browser page changes size.</summary>
+        public void FitScreen()
+        {
+            var scaler = root.GetComponent<CanvasScaler>();
+
+            if (scaler.enabled && !Mathf.Approximately(scaler.scaleFactor, HudLayout.DpToPixels))
+            {
+                scaler.scaleFactor = HudLayout.DpToPixels;
+            }
+        }
+
         /// <summary>Draws the HUD through a camera at a set scale, for the review tools.</summary>
         public void DrawThrough(Camera camera, float scale)
         {

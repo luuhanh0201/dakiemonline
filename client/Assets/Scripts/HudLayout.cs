@@ -62,8 +62,9 @@ namespace DaKiem.Client
             new HudButtonSpec(HudButton.Potion, "Thuốc", SkillDp, OuterArcDp, 88f),
         };
 
-#if UNITY_STANDALONE
-        // A desktop window has no meaningful dpi, so scale it to match the phone's layout.
+#if UNITY_STANDALONE || UNITY_WEBGL
+        // A desktop window, and a browser page that fills its window, have no meaningful dpi, so the
+        // HUD is scaled to match the phone's layout by height.
         private const float PhoneHeightDp = 393f;
 
         public static float DpToPixels => Screen.height / PhoneHeightDp;

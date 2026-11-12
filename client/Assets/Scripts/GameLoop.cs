@@ -168,6 +168,8 @@ namespace DaKiem.Client
                 AndroidImmersive.Apply();
             }
 
+            hud?.FitScreen();
+
             if (online != null)
             {
                 UpdateOnline();
@@ -467,7 +469,8 @@ namespace DaKiem.Client
                 status += "\n" + online.Message;
             }
 
-            var line = new Rect(0f, Screen.height * 0.11f, Screen.width, Screen.height * 0.2f);
+            // Below the FPS counter, which sits from about 8% to 13% of the height.
+            var line = new Rect(0f, Screen.height * 0.15f, Screen.width, Screen.height * 0.2f);
             GUI.Label(new Rect(line.x + 1f, line.y + 1f, line.width, line.height), status, shadow);
             GUI.Label(line, status, small);
             onlineView.DrawLabels(new GUIStyle(small) { alignment = TextAnchor.MiddleCenter });
