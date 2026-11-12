@@ -804,10 +804,10 @@ namespace DaKiem.Client.Accounts
             backdrop.Label = line;
             backdrop.Plate = plate;
             line.gameObject.name = "StatusMessage";
-            line.resizeTextForBestFit = true;
-            line.resizeTextMinSize = 24;
-            line.resizeTextMaxSize = 30;
-            line.verticalOverflow = VerticalWrapMode.Truncate;
+
+            // AccountMessageBackdrop sizes the text, and the plate when the text needs more room.
+            backdrop.Largest = 30;
+            backdrop.Smallest = 20;
             return line;
         }
 

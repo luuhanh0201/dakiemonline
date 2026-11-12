@@ -97,14 +97,62 @@ namespace DaKiem.Client.Accounts
         public void OnPointerExit(PointerEventData e) { hovered = false; pressed = false; }
     }
 
-    /// <summary>Keeps status text readable over the scenery, without a blank plate when there is no message.</summary>
+    /// <summary>
+    /// Keeps status text readable over the scenery, without a blank plate when there is no message. A long
+    /// message first gets a smaller size, down to <see cref="Smallest"/>; if it still does not fit, the
+    /// plate grows upward, its bottom edge staying put, so the words never run out of it.
+    /// </summary>
     public sealed class AccountMessageBackdrop : MonoBehaviour
     {
+        private const float PadX = 16f;
+        private const float PadY = 6f;
+
         public Text Label;
         public Image Plate;
+        public int Largest = 30;
+        public int Smallest = 20;
+        private float baseHeight = -1f;
+        private float bottom;
+        private string fitted;
+
         private void LateUpdate()
         {
-            if (Label != null && Plate != null) Plate.enabled = !string.IsNullOrWhiteSpace(Label.text);
+            if (Label == null || Plate == null) return;
+            Plate.enabled = !string.IsNullOrWhiteSpace(Label.text);
+            if (Label.text == fitted) return;
+            fitted = Label.text;
+
+            var plate = (RectTransform)Plate.transform;
+            if (baseHeight < 0f)
+            {
+                baseHeight = plate.sizeDelta.y;
+                bottom = plate.anchoredPosition.y - baseHeight * (1f - plate.pivot.y);
+            }
+
+            Label.resizeTextForBestFit = false;
+            Label.horizontalOverflow = HorizontalWrapMode.Wrap;
+            Label.verticalOverflow = VerticalWrapMode.Overflow;
+            float width = plate.sizeDelta.x - 2f * PadX;
+            float room = baseHeight - 2f * PadY;
+            Label.fontSize = Largest;
+
+            while (Label.fontSize > Smallest && Needed(width) > room)
+            {
+                Label.fontSize--;
+            }
+
+            float height = Mathf.Max(baseHeight, Needed(width) + 2f * PadY);
+            plate.sizeDelta = new Vector2(plate.sizeDelta.x, height);
+            plate.anchoredPosition = new Vector2(plate.anchoredPosition.x, bottom + height * (1f - plate.pivot.y));
+            Label.rectTransform.offsetMin = new Vector2(PadX, PadY);
+            Label.rectTransform.offsetMax = new Vector2(-PadX, -PadY);
+        }
+
+        /// <summary>The height the text takes at the current size when wrapped to the given width.</summary>
+        private float Needed(float width)
+        {
+            TextGenerationSettings settings = Label.GetGenerationSettings(new Vector2(width, 0f));
+            return Label.cachedTextGeneratorForLayout.GetPreferredHeight(Label.text, settings) / Label.pixelsPerUnit;
         }
     }
 
