@@ -140,7 +140,7 @@ namespace DaKiem.Client
                 return;
             }
 
-            bool onLeftHalf = touch.screenPosition.x < Screen.width / 2f;
+            bool onLeftHalf = touch.screenPosition.x < GameFrame.Pixels.center.x;
 
             if (onLeftHalf)
             {

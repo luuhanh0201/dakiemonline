@@ -175,6 +175,9 @@ namespace DaKiem.Client
                 AndroidImmersive.Apply();
             }
 
+            // While playing, the world, the HUD and the buttons share one frame; see GameFrame.
+            GameFrame.Active = online != null || fight != null;
+            GameFrame.Apply(Camera.main);
             hud?.FitScreen();
 
             if (online != null)
@@ -321,7 +324,7 @@ namespace DaKiem.Client
 
             var style = new GUIStyle(GUI.skin.label)
             {
-                fontSize = Screen.height / 24,
+                fontSize = Mathf.Max(1, (int)(GameFrame.Gui.height / 24f)),
                 normal = { textColor = Color.white },
             };
 
@@ -485,15 +488,16 @@ namespace DaKiem.Client
             }
 
             // Below the FPS counter, which sits from about 8% to 13% of the height.
-            var line = new Rect(0f, Screen.height * 0.15f, Screen.width, Screen.height * 0.2f);
+            Rect frame = GameFrame.Gui;
+            var line = new Rect(frame.x, frame.y + frame.height * 0.15f, frame.width, frame.height * 0.2f);
             GUI.Label(new Rect(line.x + 1f, line.y + 1f, line.width, line.height), status, shadow);
             GUI.Label(line, status, small);
             onlineView.DrawLabels(new GUIStyle(small) { alignment = TextAnchor.MiddleCenter });
 
-            float unit = Screen.height / 12f;
+            float unit = frame.height / 12f;
             var button = new GUIStyle(GUI.skin.button) { fontSize = small.fontSize };
 
-            if (GUI.Button(new Rect(Screen.width - unit * 3.2f, unit * 0.2f, unit * 3f, unit * 0.9f), "Thoát", button))
+            if (GUI.Button(new Rect(frame.xMax - unit * 3.2f, frame.y + unit * 0.2f, unit * 3f, unit * 0.9f), "Thoát", button))
             {
                 LeaveServer(null);
                 return;
@@ -504,7 +508,7 @@ namespace DaKiem.Client
 
             if (account != null
                 && account.IsGuest
-                && GUI.Button(new Rect(Screen.width - unit * 3.2f, unit * 2.4f, unit * 3f, unit * 0.9f), "Liên kết TK", button))
+                && GUI.Button(new Rect(frame.xMax - unit * 3.2f, frame.y + unit * 2.4f, unit * 3f, unit * 0.9f), "Liên kết TK", button))
             {
                 screens.ShowLinkInGame();
             }
@@ -512,7 +516,7 @@ namespace DaKiem.Client
             // Only the test room has a refill button; real play never shows it.
             if (online.TestRoom
                 && online.Status == OnlineStatus.Playing
-                && GUI.Button(new Rect(Screen.width - unit * 3.2f, unit * 1.3f, unit * 3f, unit * 0.9f), "Nạp đầy", button))
+                && GUI.Button(new Rect(frame.xMax - unit * 3.2f, frame.y + unit * 1.3f, unit * 3f, unit * 0.9f), "Nạp đầy", button))
             {
                 refillPressed = true;
             }
@@ -532,13 +536,15 @@ namespace DaKiem.Client
                 return;
             }
 
-            if (GUI.Button(new Rect(Screen.width - unit * 3.2f, unit * 3.5f, unit * 3f, unit * 0.9f), "Túi đồ", button))
+            Rect frame = GameFrame.Gui;
+
+            if (GUI.Button(new Rect(frame.xMax - unit * 3.2f, frame.y + unit * 3.5f, unit * 3f, unit * 0.9f), "Túi đồ", button))
             {
                 inventory.Toggle(online.Inventory);
             }
 
             GroundItem? near = Nearby();
-            var place = new Rect(Screen.width / 2f - unit * 2.5f, Screen.height * 0.62f, unit * 5f, unit * 0.95f);
+            var place = new Rect(frame.center.x - unit * 2.5f, frame.y + frame.height * 0.62f, unit * 5f, unit * 0.95f);
 
             if (near != null)
             {
@@ -626,7 +632,8 @@ namespace DaKiem.Client
 
             var big = new GUIStyle(style) { fontSize = style.fontSize * 3 / 2, alignment = TextAnchor.MiddleCenter };
             var bigShadow = new GUIStyle(big) { normal = { textColor = Color.black } };
-            var area = new Rect(0f, Screen.height * 0.3f, Screen.width, Screen.height * 0.15f);
+            Rect frame = GameFrame.Gui;
+            var area = new Rect(frame.x, frame.y + frame.height * 0.3f, frame.width, frame.height * 0.15f);
             GUI.Label(new Rect(area.x + 2f, area.y + 2f, area.width, area.height), notice, bigShadow);
             GUI.Label(area, notice, big);
         }

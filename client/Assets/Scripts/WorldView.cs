@@ -171,6 +171,18 @@ namespace DaKiem.Client
             {
                 position.y = HouseCamera().y;
             }
+            else
+            {
+                // The window or the game frame changed shape: twelve units across still, ground in place.
+                float size = ViewWidth / camera.aspect / 2f;
+
+                if (!Mathf.Approximately(camera.orthographicSize, size))
+                {
+                    camera.orthographicSize = size;
+                    position.y = size - GroundMargin;
+                    cameraTop = position.y + size;
+                }
+            }
 
             float halfView = ViewWidth / 2f;
             float target = Mathf.Clamp(feet.x + facing * LookAhead, halfView, mapWidth - halfView);
@@ -364,10 +376,11 @@ namespace DaKiem.Client
         }
 
         /// <summary>
-        /// The old master, so the house does not feel frozen. Every movement is a drawn frame: he breathes
-        /// through five frames with his hands behind his back and now and then blinks; when the player
-        /// comes close he brings a hand round and holds it out, nodding, and puts it back when they leave.
-        /// He turns to face the player. Only the picture moves; he is not part of the rules.
+        /// The old master, so the house does not feel frozen. Every movement is a drawn frame, played fast
+        /// with small steps between frames so it looks smooth: he breathes in and out with his hands behind
+        /// his back and now and then blinks; when the player comes close he brings a hand round and holds it
+        /// out, nodding, and puts it back when they leave. He turns to face the player. Only the picture
+        /// moves; he is not part of the rules.
         /// </summary>
         private sealed class MasterLife
         {
@@ -382,47 +395,35 @@ namespace DaKiem.Client
             private const float FarUnits = 2.7f;
             private const float TurnUnits = 0.3f;
 
-            // Breathing: in through frames 2 and 3, out through 4 and 5; how long each stays, in seconds.
-            private static readonly (int Frame, float Seconds)[] Breath =
-            {
-                (0, 0.7f), (1, 0.35f), (2, 0.6f), (3, 0.35f), (4, 0.5f),
-            };
-
-            private const int BlinkFrame = 5;
-            private const float BlinkSeconds = 0.14f;
+            // Breathing: every idle frame but the last in turn, then a rest breathed out. The last frame is the blink.
+            private const float BreathFramesPerSecond = 8f;
+            private const float BreathRestSeconds = 0.45f;
+            private const float BlinkSeconds = 0.12f;
             private const int BreathsBetweenBlinks = 3;
 
-            // Reaching out takes four drawn steps; then he holds the hand out and nods now and then.
-            private const float ReachFrameSeconds = 0.09f;
-            private const int HoldFrame = 4;
-            private const int NodFrame = 5;
+            // Reaching out plays the invite frames up to the third from last, which holds the hand out; the last two
+            // are a nod, halfway then all the way, played down and back up while the hand is held out.
+            private const float ReachFramesPerSecond = 16f;
             private const float HoldSeconds = 1.4f;
-            private const float NodSeconds = 0.45f;
+            private const float NodHalfSeconds = 0.09f;
+            private const float NodDownSeconds = 0.32f;
+            private const float NodSeconds = NodHalfSeconds * 2f + NodDownSeconds;
 
             private readonly Transform feet;
             private readonly SpriteRenderer body;
-            private readonly Sprite[] idle = new Sprite[6];
-            private readonly Sprite[] invite = new Sprite[6];
+            private readonly List<Sprite> idle = Load("idle_");
+            private readonly List<Sprite> invite = Load("invite_");
             private readonly float breathCycle;
             private bool near;
             private int facing = 1;
 
-            // How far the hand is out, in frames of the invite drawing: 0 behind the back, 4 held out.
+            // How far the hand is out, in invite frames: 0 behind the back, HoldFrame held out.
             private float reach;
             private float holdClock;
 
             public MasterLife(Transform parent)
             {
-                for (int index = 0; index < idle.Length; index++)
-                {
-                    idle[index] = Resources.Load<Sprite>($"{Folder}idle_{index + 1}");
-                    invite[index] = Resources.Load<Sprite>($"{Folder}invite_{index + 1}");
-                }
-
-                foreach ((int _, float seconds) in Breath)
-                {
-                    breathCycle += seconds;
-                }
+                breathCycle = (idle.Count - 1) / BreathFramesPerSecond + BreathRestSeconds;
 
                 feet = new GameObject("Master").transform;
                 feet.SetParent(parent, false);
@@ -441,6 +442,8 @@ namespace DaKiem.Client
                 item.transform.localPosition = new Vector3(0f, height / 2f, 0f);
             }
 
+            private int HoldFrame => invite.Count - 3;
+
             public void Animate(float time, float frameSeconds, float playerX)
             {
                 float distance = playerX - X;
@@ -452,7 +455,7 @@ namespace DaKiem.Client
                 }
 
                 feet.localScale = new Vector3(facing, 1f, 1f);
-                reach = Mathf.MoveTowards(reach, near ? HoldFrame : 0f, frameSeconds / ReachFrameSeconds);
+                reach = Mathf.MoveTowards(reach, near ? HoldFrame : 0f, frameSeconds * ReachFramesPerSecond);
 
                 if (reach <= 0f)
                 {
@@ -467,7 +470,12 @@ namespace DaKiem.Client
                 else
                 {
                     holdClock = Mathf.Repeat(holdClock + frameSeconds, HoldSeconds + NodSeconds);
-                    body.sprite = invite[holdClock < HoldSeconds ? HoldFrame : NodFrame];
+                    float nod = holdClock - HoldSeconds;
+                    int frame = nod < 0f ? HoldFrame
+                        : nod < NodHalfSeconds ? HoldFrame + 1
+                        : nod < NodHalfSeconds + NodDownSeconds ? HoldFrame + 2
+                        : HoldFrame + 1;
+                    body.sprite = invite[frame];
                 }
             }
 
@@ -475,24 +483,34 @@ namespace DaKiem.Client
             {
                 int round = (int)(time / breathCycle);
                 float at = Mathf.Repeat(time, breathCycle);
+                int breathing = idle.Count - 1;
 
-                // A blink at the start of every few breaths, while he has breathed out.
-                if (round % BreathsBetweenBlinks == 0 && at < BlinkSeconds)
+                // The rest comes first, breathed out; every few breaths a blink starts it.
+                if (at < BreathRestSeconds)
                 {
-                    return idle[BlinkFrame];
+                    return round % BreathsBetweenBlinks == 0 && at < BlinkSeconds ? idle[breathing] : idle[0];
                 }
 
-                foreach ((int frame, float seconds) in Breath)
+                int frame = (int)((at - BreathRestSeconds) * BreathFramesPerSecond);
+                return idle[Mathf.Clamp(frame, 0, breathing - 1)];
+            }
+
+            /// <summary>Frames named prefix_1, prefix_2, … in order, as many as there are.</summary>
+            private static List<Sprite> Load(string prefix)
+            {
+                var frames = new List<Sprite>();
+
+                for (int number = 1; ; number++)
                 {
-                    if (at < seconds)
+                    Sprite frame = Resources.Load<Sprite>($"{Folder}{prefix}{number}");
+
+                    if (frame == null)
                     {
-                        return idle[frame];
+                        return frames;
                     }
 
-                    at -= seconds;
+                    frames.Add(frame);
                 }
-
-                return idle[0];
             }
         }
 

@@ -144,10 +144,10 @@ TextureImporter:
       name: invite_1_0
       rect:
         serializedVersion: 2
-        x: 7
+        x: 10
         y: 0
-        width: 154
-        height: 299
+        width: 156
+        height: 301
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}

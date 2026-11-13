@@ -71,13 +71,12 @@ namespace DaKiem.Client
                 return;
             }
 
-            style ??= new GUIStyle(GUI.skin.label)
-            {
-                fontSize = Screen.height / FontSizeDivisor,
-                normal = { textColor = Color.white },
-            };
+            style ??= new GUIStyle(GUI.skin.label) { normal = { textColor = Color.white } };
 
-            GUI.Label(new Rect(Screen.width * 0.3f, Screen.height / 12f, Screen.width, Screen.height / 8f), $"FPS {fps}", style);
+            // Inside the game frame, like the HUD, and sized with it when the window changes.
+            Rect frame = GameFrame.Gui;
+            style.fontSize = Mathf.Max(1, (int)(frame.height / FontSizeDivisor));
+            GUI.Label(new Rect(frame.x + frame.width * 0.3f, frame.y + frame.height / 12f, frame.width, frame.height / 8f), $"FPS {fps}", style);
         }
     }
 }

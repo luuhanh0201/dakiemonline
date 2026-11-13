@@ -50,6 +50,7 @@ namespace DaKiem.Client
         private readonly Dictionary<HudButton, Image> cooldownSweeps = new Dictionary<HudButton, Image>();
         private readonly HashSet<HudButton> dimmedButtons = new HashSet<HudButton>();
         private readonly RectTransform root;
+        private readonly RectTransform area;
         private readonly Canvas canvas;
         private readonly RectTransform healthFill;
         private readonly RectTransform energyFill;
@@ -81,6 +82,7 @@ namespace DaKiem.Client
 
             root = CreateCanvas();
             canvas = root.GetComponent<Canvas>();
+            area = CreateArea(root);
             CreatePortrait();
             float barLeft = EdgeDp + PortraitDp + BarGapDp;
             healthFill = CreateBar(barLeft, -EdgeDp, BarWidthDp, BarHeightDp, HealthColor);
@@ -98,7 +100,7 @@ namespace DaKiem.Client
 
             bossHealthFill = CreateBossBar();
 
-            RectTransform panel = CreateFrame("EndPanel", root, Color.white, panelFrame, new Vector2(EndPanelWidthDp, EndPanelHeightDp));
+            RectTransform panel = CreateFrame("EndPanel", area, Color.white, panelFrame, new Vector2(EndPanelWidthDp, EndPanelHeightDp));
             endPanel = panel.gameObject;
             endTitle = CreateLabel("Title", panel, new Vector2(EndPanelWidthDp, 44f), new Vector2(0f, 90f), EndTitleSizeDp);
             endBody = CreateLabel("Body", panel, new Vector2(EndPanelWidthDp, 110f), new Vector2(0f, 8f), EndBodySizeDp);
@@ -145,7 +147,9 @@ namespace DaKiem.Client
             bossHealthFill.parent.gameObject.SetActive(visible);
         }
 
-        /// <summary>Keeps the HUD's scale right after the window or browser page changes size.</summary>
+        /// <summary>
+        /// Keeps the HUD inside the game frame and at its scale after the window or browser page changes size.
+        /// </summary>
         public void FitScreen()
         {
             var scaler = root.GetComponent<CanvasScaler>();
@@ -154,6 +158,10 @@ namespace DaKiem.Client
             {
                 scaler.scaleFactor = HudLayout.DpToPixels;
             }
+
+            Rect frame = GameFrame.Normalized;
+            area.anchorMin = frame.min;
+            area.anchorMax = frame.max;
         }
 
         /// <summary>Draws the HUD through a camera at a set scale, for the review tools.</summary>
@@ -175,7 +183,8 @@ namespace DaKiem.Client
         public HudButton ButtonAt(Vector2 screenPosition)
         {
             float scale = HudLayout.DpToPixels;
-            var corner = new Vector2(Screen.width, 0f);
+            Rect frame = GameFrame.Pixels;
+            var corner = new Vector2(frame.xMax, frame.yMin);
 
             foreach (HudButtonSpec spec in HudLayout.Buttons)
             {
@@ -223,8 +232,9 @@ namespace DaKiem.Client
             joystickKnob.gameObject.SetActive(active);
 
             float scale = HudLayout.DpToPixels;
-            joystickBase.anchoredPosition = originScreen / scale;
-            joystickKnob.anchoredPosition = (originScreen + knobOffsetScreen) / scale;
+            Vector2 inFrame = originScreen - GameFrame.Pixels.min;
+            joystickBase.anchoredPosition = inFrame / scale;
+            joystickKnob.anchoredPosition = (inFrame + knobOffsetScreen) / scale;
         }
 
         public void ShowResources(float health, float energy, float stamina)
@@ -245,6 +255,17 @@ namespace DaKiem.Client
             fill.sizeDelta = new Vector2((widthDp - 2f * BarInsetDp) * Mathf.Clamp01(value), fill.sizeDelta.y);
         }
 
+        /// <summary>Everything of the HUD hangs from this, stretched over the game frame.</summary>
+        private static RectTransform CreateArea(RectTransform parent)
+        {
+            var area = (RectTransform)new GameObject("Frame", typeof(RectTransform)).transform;
+            area.SetParent(parent, false);
+            area.anchorMin = Vector2.zero;
+            area.anchorMax = Vector2.one;
+            area.offsetMin = area.offsetMax = Vector2.zero;
+            return area;
+        }
+
         private RectTransform CreateCanvas()
         {
             var host = new GameObject("Hud", typeof(Canvas), typeof(CanvasScaler));
@@ -261,7 +282,7 @@ namespace DaKiem.Client
         private void CreatePortrait()
         {
             var size = new Vector2(PortraitDp, PortraitDp);
-            RectTransform frame = CreateImage("Portrait", root, Color.white, disc, size);
+            RectTransform frame = CreateImage("Portrait", area, Color.white, disc, size);
             frame.anchorMin = frame.anchorMax = frame.pivot = new Vector2(0f, 1f);
             frame.anchoredPosition = new Vector2(EdgeDp, -EdgeDp);
 
@@ -281,7 +302,7 @@ namespace DaKiem.Client
 
         private RectTransform CreateBar(float left, float top, float widthDp, float heightDp, Color color)
         {
-            RectTransform back = CreateFrame("BarBack", root, Color.white, barFrame, new Vector2(widthDp, heightDp));
+            RectTransform back = CreateFrame("BarBack", area, Color.white, barFrame, new Vector2(widthDp, heightDp));
             back.anchorMin = back.anchorMax = back.pivot = new Vector2(0f, 1f);
             back.anchoredPosition = new Vector2(left, top);
             return CreateBarFill(back, widthDp, heightDp, color);
@@ -289,7 +310,7 @@ namespace DaKiem.Client
 
         private RectTransform CreateBossBar()
         {
-            RectTransform back = CreateFrame("BossBarBack", root, Color.white, barFrame, new Vector2(BossBarWidthDp, BossBarHeightDp));
+            RectTransform back = CreateFrame("BossBarBack", area, Color.white, barFrame, new Vector2(BossBarWidthDp, BossBarHeightDp));
             back.anchorMin = back.anchorMax = back.pivot = new Vector2(0.5f, 1f);
             back.anchoredPosition = new Vector2(0f, -EdgeDp);
             return CreateBarFill(back, BossBarWidthDp, BossBarHeightDp, BossHealthColor);
@@ -333,7 +354,7 @@ namespace DaKiem.Client
         {
             Sprite sprite = spec.Button == HudButton.Attack ? attackDisc : disc;
             var size = new Vector2(spec.DiameterDp, spec.DiameterDp);
-            RectTransform button = CreateImage(spec.Label, root, Color.white, sprite, size);
+            RectTransform button = CreateImage(spec.Label, area, Color.white, sprite, size);
             button.anchorMin = button.anchorMax = new Vector2(1f, 0f);
             button.anchoredPosition = spec.CentreDp;
             buttonImages[spec.Button] = button.GetComponent<Image>();
@@ -353,7 +374,7 @@ namespace DaKiem.Client
 
         private RectTransform CreateDiscObject(string name, Sprite sprite, float diameterDp, Color color)
         {
-            RectTransform rect = CreateImage(name, root, color, sprite, new Vector2(diameterDp, diameterDp));
+            RectTransform rect = CreateImage(name, area, color, sprite, new Vector2(diameterDp, diameterDp));
             rect.anchorMin = rect.anchorMax = Vector2.zero;
             return rect;
         }
