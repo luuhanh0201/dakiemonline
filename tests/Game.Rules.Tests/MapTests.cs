@@ -150,17 +150,69 @@ namespace Game.Rules.Tests
         }
 
         [Fact]
-        public void TheHouseWallsKeepThePlayerInsideAndTheDoorIsWithinReach()
+        public void TheHouseWallsKeepThePlayerInsideWithAnEmptyCornerPastTheDoor()
         {
             Room room = NewRoom();
             RoomPlayer player = room.Join(1)!;
 
-            Run(room, 1, Right, Ticks.PerSecond * 4);
+            Run(room, 1, Right, Ticks.PerSecond * 5);
 
-            Assert.True(player.Movement.X < 12d);
-            Assert.NotNull(MapRules.DoorAt(HouseMap, player.Movement.X));
+            // The picture is 14.83 units wide; the corner past the door is out of its reach.
+            Assert.True(player.Movement.X < 14.83d);
+            Assert.True(player.Movement.X > HouseDoor.X + HouseDoor.Reach);
+            Assert.Null(MapRules.DoorAt(HouseMap, player.Movement.X));
             Run(room, 1, Door, 1);
+            Assert.Equal(House, player.Map);
+        }
+
+        [Fact]
+        public void BothDoorsNowAreInTheMiddleOfTheirMapsAndNeedTheButton()
+        {
+            Assert.False(HouseDoor.Walk);
+            Assert.False(YardDoor.Walk);
+        }
+
+        [Fact]
+        public void WalkingPastADoorInTheMiddleOfTheMapDoesNotUseIt()
+        {
+            Room room = NewRoom();
+            RoomPlayer player = room.Join(1)!;
+            PlaceAt(player, HouseDoor.X - HouseDoor.Reach - 0.2d);
+
+            Run(room, 1, Right, Ticks.PerSecond / 2);
+
+            Assert.Equal(House, player.Map);
+            Assert.True(player.Movement.X > HouseDoor.X + HouseDoor.Reach);
+        }
+
+        [Fact]
+        public void WalkingIntoADoorAtTheEdgeOfTheMapGoesThroughWithoutTheButton()
+        {
+            Dictionary<string, string> files = TestConfig.Files();
+            files[GameConfig.HouseFile] = files[GameConfig.HouseFile].Replace("\"toX\": 8.3, \"walk\": false", "\"toX\": 8.3, \"walk\": true");
+            files[GameConfig.MapFile] = files[GameConfig.MapFile].Replace("\"toX\": 10.4", "\"toX\": 9.6");
+            GameConfig edge = GameConfig.Parse(files);
+            var room = new Room(1, edge, Server());
+            RoomPlayer player = room.Join(1)!;
+            MapDoor door = edge.Maps[House].Doors[0];
+            PlaceAt(player, door.X - door.Reach - 0.2d);
+
+            Run(room, 1, Right, Ticks.PerSecond / 2);
+
+            Assert.True(door.Walk);
             Assert.Equal(Test, player.Map);
+            Assert.InRange(player.Movement.X, door.ToX, door.ToX + 2d);
+        }
+
+        [Fact]
+        public void ADoorThatLandsInsideAWalkThroughDoorIsRefused()
+        {
+            Dictionary<string, string> files = TestConfig.Files();
+            files[GameConfig.MapFile] = files[GameConfig.MapFile].Replace("\"toX\": 10.4, \"walk\": false", "\"toX\": 10.4, \"walk\": true");
+
+            var error = Assert.Throws<InvalidConfigException>(() => GameConfig.Parse(files));
+
+            Assert.Contains("send the player back", error.Message);
         }
 
         [Fact]

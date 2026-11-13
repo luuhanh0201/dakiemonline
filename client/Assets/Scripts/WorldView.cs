@@ -6,7 +6,8 @@ namespace DaKiem.Client
 {
     /// <summary>
     /// Draws the map the player is on from its art. On the test map the camera follows the character;
-    /// the house is one screen and the camera stands still. Every door gets the same light effect.
+    /// in the house it follows too, with an empty corner past the door so the buttons never cover it.
+    /// Every door gets the same light effect.
     /// </summary>
     public sealed class WorldView
     {
@@ -41,8 +42,11 @@ namespace DaKiem.Client
         private const string PlatformRock = "rock_big";
         private const float PlatformRockSink = 0.44f;
 
-        // The house picture is one screen wide; its floor meets the wall 715 px down its 941 px.
-        private const float HouseWidth = ViewWidth;
+        // The house picture is 2067 x 941 px at the scale of the approved 1672 px one shown 12 units wide, so
+        // there is an empty corner past the door; its floor meets the wall 715 px down.
+        private const float HousePixelsPerUnit = 1672f / ViewWidth;
+        private const float HouseWidth = 2067f / HousePixelsPerUnit;
+        private const float HouseHeight = 941f / HousePixelsPerUnit;
         private const float HouseFloorShare = 715f / 941f;
 
         private const int BackgroundOrder = -100;
@@ -87,7 +91,7 @@ namespace DaKiem.Client
             ("chest", 1.88f, 0f, 1.12f, 0f, false),
             ("lantern", 2.2f, 5.1f, 2.05f, 0f, true),
             ("sword", 3.05f, 2.15f, 0.5f, 0f, false),
-            ("master", 4.05f, 0f, 1.55f, 0f, false),
+            ("master", 4.05f, 0f, 1.25f, 0f, false),
             ("table_1", 8.35f, 0f, 1.6f, 0f, false),
             ("door_open", 11.45f, 0f, 2.75f, 0.8f, false),
         };
@@ -101,7 +105,11 @@ namespace DaKiem.Client
         private float cameraTop;
         private Vector3 shakeOffset;
         private float shakeLeft;
-        private bool fixedCamera;
+        private bool house;
+        private float mapWidth = MapWidth;
+
+        // After a new map is built the camera starts where it belongs rather than sliding there.
+        private bool snap;
 
         public WorldView(GameConfig config)
         {
@@ -131,6 +139,7 @@ namespace DaKiem.Client
             }
 
             Map = map;
+            snap = true;
             doors.Clear();
             shakeLeft = 0f;
             shakeOffset = Vector3.zero;
@@ -155,16 +164,15 @@ namespace DaKiem.Client
         {
             Vector3 position = camera.transform.position - shakeOffset;
 
-            if (fixedCamera)
+            if (house)
             {
-                position = HouseCamera();
+                position.y = HouseCamera().y;
             }
-            else
-            {
-                float halfView = ViewWidth / 2f;
-                float target = Mathf.Clamp(feet.x + facing * LookAhead, halfView, MapWidth - halfView);
-                position.x = Mathf.Lerp(position.x, target, 1f - Mathf.Exp(-CameraSmoothing * Time.deltaTime));
-            }
+
+            float halfView = ViewWidth / 2f;
+            float target = Mathf.Clamp(feet.x + facing * LookAhead, halfView, mapWidth - halfView);
+            position.x = snap ? target : Mathf.Lerp(position.x, target, 1f - Mathf.Exp(-CameraSmoothing * Time.deltaTime));
+            snap = false;
 
             shakeLeft = Mathf.Max(0f, shakeLeft - Time.deltaTime);
             float amount = shakeLeft / ShakeSeconds;
@@ -173,10 +181,7 @@ namespace DaKiem.Client
 
             camera.transform.position = position + shakeOffset;
 
-            if (!fixedCamera)
-            {
-                PlaceBackground(position.x);
-            }
+            PlaceBackground(position.x);
 
             foreach (DoorLight door in doors)
             {
@@ -191,10 +196,7 @@ namespace DaKiem.Client
             position.x = x;
             camera.transform.position = position;
 
-            if (!fixedCamera)
-            {
-                PlaceBackground(x);
-            }
+            PlaceBackground(x);
         }
 
         /// <summary>A short jolt for the heaviest blows.</summary>
@@ -216,7 +218,8 @@ namespace DaKiem.Client
 
         private void BuildTestMap(IReadOnlyList<MapBox> boxes)
         {
-            fixedCamera = false;
+            house = false;
+            mapWidth = MapWidth;
             camera.backgroundColor = SkyColor;
             camera.orthographicSize = ViewWidth / camera.aspect / 2f;
             camera.transform.position = new Vector3(ViewWidth / 2f, camera.orthographicSize - GroundMargin, -10f);
@@ -247,7 +250,8 @@ namespace DaKiem.Client
 
         private void BuildHouse()
         {
-            fixedCamera = true;
+            house = true;
+            mapWidth = HouseWidth;
             camera.backgroundColor = HouseEdgeColor;
             background = null;
 
@@ -273,19 +277,19 @@ namespace DaKiem.Client
         }
 
         /// <summary>
-        /// The whole width of the house on screen, with the floor where it is on the test map; a short
-        /// screen cuts the beams and the stones evenly, a tall one shows the colour of the beams.
+        /// Twelve units of the house across the screen, as on the test map, starting at its left wall. A
+        /// short screen cuts the beams and the stones evenly, a tall one shows the colour of the beams.
         /// </summary>
         private Vector3 HouseCamera()
         {
-            camera.orthographicSize = HouseWidth / camera.aspect / 2f;
+            camera.orthographicSize = ViewWidth / camera.aspect / 2f;
             float size = camera.orthographicSize;
-            float pictureHeight = HouseWidth * 941f / 1672f;
+            float pictureHeight = HouseHeight;
             float bottom = -pictureHeight * (1f - HouseFloorShare);
             float top = bottom + pictureHeight;
             float wanted = size - GroundMargin;
             float y = size * 2f >= pictureHeight ? (bottom + top) / 2f : Mathf.Clamp(wanted, bottom + size, top - size);
-            return new Vector3(HouseWidth / 2f, y, -10f);
+            return new Vector3(ViewWidth / 2f, y, -10f);
         }
 
         private void PlaceBackground(float cameraX)

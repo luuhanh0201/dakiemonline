@@ -21,6 +21,12 @@ namespace Game.Rules
 
         /// <summary>Where the player stands on arriving.</summary>
         public double ToX { get; set; }
+
+        /// <summary>
+        /// A way out at the edge of the map: walking into it is enough. A door in the middle of a map has a
+        /// button instead, so walking past it does not take anyone away.
+        /// </summary>
+        public bool Walk { get; set; }
     }
 
     /// <summary>One map file: its solid boxes, where players appear and the doors out of it.</summary>

@@ -2,16 +2,16 @@
   "version": 1,
   "id": "map.house",
   "status": "DE_XUAT",
-  "source": "KICH-BAN-CAC-MAP muc 5 (M01 Nha): nha rieng, khong boss; bo cuc theo anh mau docs/map-nha/anh-mau.png ban duyet 13/11/2026. Nha rong 12 don vi bang mot man hinh; so do quy tu khung 1672x941, san o y 715",
+  "source": "KICH-BAN-CAC-MAP muc 5 (M01 Nha): nha rieng, khong boss; bo cuc theo anh mau docs/map-nha/anh-mau.png ban duyet 13/11/2026. Nha noi dai them mot goc trong ben phai cua de nut khong che cua (ban yeu cau 13/11/2026): anh 2067x941 rong 14.83 don vi, 139.33 px moi don vi, san o y 715",
   "spawnX": 5.4,
   "boss": false,
   "shared": false,
   "boxes": [
-    { "id": "ground", "minX": -1, "minY": -1, "maxX": 13, "maxY": 0, "oneWay": false },
+    { "id": "ground", "minX": -1, "minY": -1, "maxX": 16, "maxY": 0, "oneWay": false },
     { "id": "wall.left", "minX": -1, "minY": 0, "maxX": 0.4, "maxY": 20, "oneWay": false },
-    { "id": "wall.right", "minX": 11.5, "minY": 0, "maxX": 13, "maxY": 20, "oneWay": false }
+    { "id": "wall.right", "minX": 14.4, "minY": 0, "maxX": 16, "maxY": 20, "oneWay": false }
   ],
   "doors": [
-    { "id": "door.yard", "name": "Ra ngoài", "x": 10.8, "reach": 0.8, "toMap": "map.test", "toX": 8.3 }
+    { "id": "door.yard", "name": "Ra ngoài", "x": 10.8, "reach": 0.8, "toMap": "map.test", "toX": 8.3, "walk": false }
   ]
 }

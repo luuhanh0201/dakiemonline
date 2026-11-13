@@ -16,6 +16,9 @@ namespace DaKiem.Client
         private const double StartX = 5d;
         private const float SystemBarCheckSeconds = 0.5f;
 
+        // How high in the doorway, in map units, the door button stands: below the bobbing arrow.
+        private const float DoorButtonHeight = 1.75f;
+
         private InputReader input;
         private HudView hud;
         private WorldView view;
@@ -548,20 +551,34 @@ namespace DaKiem.Client
             }
 
             MapDoor door = DoorNearby();
+            Camera camera = Camera.main;
 
-            if (door != null && GUI.Button(place, door.Name, button))
+            if (door == null || camera == null)
+            {
+                return;
+            }
+
+            // The button stands in the doorway itself, so it reads as the door and the action buttons never cover it.
+            Vector3 at = camera.WorldToScreenPoint(new Vector3((float)door.X, DoorButtonHeight, 0f));
+            var onDoor = new Rect(at.x - unit * 1.4f, Screen.height - at.y - unit * 0.45f, unit * 2.8f, unit * 0.9f);
+
+            if (GUI.Button(onDoor, door.Name, button))
             {
                 doorPressed = true;
             }
         }
 
-        /// <summary>The door the player stands at, the same check the server makes.</summary>
+        /// <summary>
+        /// The door with a button that the player stands at, the same check the server makes. A door at the
+        /// edge of a map has no button: walking into it is enough.
+        /// </summary>
         private MapDoor DoorNearby()
         {
             Predictor predictor = online.Predictor;
-            return predictor == null || predictor.Resources.IsDead
+            MapDoor door = predictor == null || predictor.Resources.IsDead
                 ? null
                 : MapRules.DoorAt(config.Maps[online.Map], predictor.Movement.X);
+            return door != null && !door.Walk ? door : null;
         }
 
         private GroundItem? Nearby()

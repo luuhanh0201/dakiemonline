@@ -13,6 +13,6 @@
     { "id": "platform.right", "minX": 19, "minY": 1.3, "maxX": 22, "maxY": 1.5, "oneWay": true }
   ],
   "doors": [
-    { "id": "door.house", "name": "Vào nhà", "x": 8.3, "reach": 0.8, "toMap": "map.house", "toX": 10.4 }
+    { "id": "door.house", "name": "Vào nhà", "x": 8.3, "reach": 0.8, "toMap": "map.house", "toX": 10.4, "walk": false }
   ]
 }

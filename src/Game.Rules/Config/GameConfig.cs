@@ -459,9 +459,20 @@ namespace Game.Rules
             {
                 foreach (MapDoor door in maps[index].Doors)
                 {
-                    if (!maps.Exists(map => map.Id == door.ToMap))
+                    MapConfig? to = maps.Find(map => map.Id == door.ToMap);
+
+                    if (to == null)
                     {
                         throw roots[index].Fail("doors", $"door '{door.Id}' leads to unknown map '{door.ToMap}'");
+                    }
+
+                    // Arriving inside a way out that is walked through would send the player straight back.
+                    foreach (MapDoor edge in to.Doors)
+                    {
+                        if (edge.Walk && Math.Abs(door.ToX - edge.X) <= edge.Reach)
+                        {
+                            throw roots[index].Fail("doors", $"door '{door.Id}' lands inside '{edge.Id}' of {to.Id}, which would send the player back");
+                        }
                     }
                 }
             }
@@ -497,6 +508,7 @@ namespace Game.Rules
                     Reach = item.Positive("reach"),
                     ToMap = item.String("toMap"),
                     ToX = item.Double("toX"),
+                    Walk = item.Boolean("walk"),
                 };
 
                 if (!ids.Add(door.Id))

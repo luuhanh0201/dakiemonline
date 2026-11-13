@@ -254,10 +254,7 @@ namespace Game.Rules
                     HitBoss(playerEvents);
                 }
 
-                if (intent.Door)
-                {
-                    UseDoor(player);
-                }
+                UseDoor(player, intent.Door);
             }
 
             StepBoss();
@@ -361,8 +358,11 @@ namespace Game.Rules
             events.Add(new RoomEvent(RoomEventKind.PlayerRespawned, player.Id));
         }
 
-        /// <summary>Through the door the player stands at, if there is one; nothing happens otherwise.</summary>
-        private void UseDoor(RoomPlayer player)
+        /// <summary>
+        /// Through the door the player stands at: one at the edge of the map just by walking into it, one in
+        /// the middle only when its button was pressed. Nothing happens away from a door.
+        /// </summary>
+        private void UseDoor(RoomPlayer player, bool pressed)
         {
             if (player.IsDead)
             {
@@ -371,7 +371,7 @@ namespace Game.Rules
 
             MapDoor? door = MapRules.DoorAt(config.Maps[player.Map], player.Movement.X);
 
-            if (door != null)
+            if (door != null && (pressed || door.Walk))
             {
                 player.MoveTo(config.MapIndex(door.ToMap), door.ToX);
                 events.Add(new RoomEvent(RoomEventKind.ChangedMap, player.Id));
