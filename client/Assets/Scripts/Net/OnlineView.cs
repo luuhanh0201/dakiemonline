@@ -47,7 +47,8 @@ namespace DaKiem.Client.Net
             this.selfFx = selfFx;
             this.bossView = bossView;
             this.world = world;
-            client.Welcomed += Restart;
+            client.Welcomed += Arrive;
+            client.MapChanged += Arrive;
         }
 
         /// <summary>Call after each tick, before the next is predicted.</summary>
@@ -136,6 +137,9 @@ namespace DaKiem.Client.Net
             others.Clear();
             bossView.SetVisible(false);
             self.SetVisible(true);
+
+            // Practising alone happens on the test map.
+            world.Show(0);
         }
 
         private double RenderTick() => client.ServerClock.Tick - RemoteTrack.DefaultDelayTicks;
@@ -147,8 +151,13 @@ namespace DaKiem.Client.Net
             remote.Fx.Show(new object(), Movement(0f, 0f, 1, true), new CombatState(config.Potion), null, config.Boss, NoEvents, false, false, 0f);
         }
 
-        private void Restart()
+        /// <summary>
+        /// Joined, came back or went through a door: the world shows the player's map, and the player is
+        /// drawn where they now are rather than sliding there.
+        /// </summary>
+        private void Arrive()
         {
+            world.Show(client.Map);
             previousFeet = currentFeet = Feet(client.Predictor.Movement);
             correction = Vector2.zero;
         }
@@ -189,7 +198,7 @@ namespace DaKiem.Client.Net
             return combatEvents.TryGetValue(playerId, out List<CombatEvent> list) ? list : NoEvents;
         }
 
-        private BossState LivingBoss => client.Boss != null && !client.Boss.IsDead ? client.Boss : null;
+        private BossState LivingBoss => client.Boss != null && !client.Boss.IsDead && client.BossOnMap ? client.Boss : null;
 
         private void ShowSelf(float blend, float frameSeconds)
         {

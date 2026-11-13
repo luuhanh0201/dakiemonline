@@ -15,16 +15,18 @@ namespace Game.Net
         public const int MaxPending = 90;
 
         private readonly GameConfig config;
-        private readonly CollisionMap map;
+        private CollisionMap map;
+        private int mapIndex;
         private readonly bool testRoom;
         private readonly List<InputMessage> pending = new List<InputMessage>();
         private readonly List<CombatEvent> events = new List<CombatEvent>();
 
-        public Predictor(GameConfig config, PlayerSnapshot start, uint lastSequence, bool testRoom)
+        public Predictor(GameConfig config, PlayerSnapshot start, uint lastSequence, bool testRoom, int map = 0)
         {
             this.config = config;
             this.testRoom = testRoom;
-            map = new CollisionMap(config.MapBoxes);
+            this.map = new CollisionMap(config.Maps[map].Boxes);
+            mapIndex = map;
             Movement = MovementState.FromSnapshot(start.Movement);
             Combat = new CombatState(config.Potion);
             Resources = new ResourceState(config.Character);
@@ -42,6 +44,23 @@ namespace Game.Net
         /// <summary>The boss as the server last showed it, which skills aim at while predicting.</summary>
         public BossState? Boss { get; set; }
 
+        /// <summary>
+        /// The map the player is on, as its place in GameConfig.Maps. The server moves players between maps;
+        /// the client sets this from each snapshot before reconciling, so replayed inputs hit the right walls.
+        /// </summary>
+        public int Map
+        {
+            get => mapIndex;
+            set
+            {
+                if (value != mapIndex)
+                {
+                    mapIndex = value;
+                    map = new CollisionMap(config.Maps[value].Boxes);
+                }
+            }
+        }
+
         public uint LastSequence { get; private set; }
         public int PendingCount => pending.Count;
 
@@ -52,10 +71,10 @@ namespace Game.Net
         public IReadOnlyList<CombatEvent> PredictedEvents => events;
 
         /// <summary>Applies one tick of input locally and returns the message to send.</summary>
-        public InputMessage Advance(double moveX, double moveY, bool dash, SkillSlot? skill = null, bool potion = false, bool refill = false)
+        public InputMessage Advance(double moveX, double moveY, bool dash, SkillSlot? skill = null, bool potion = false, bool refill = false, bool door = false)
         {
             LastSequence++;
-            InputMessage input = InputMessage.FromJoystick(LastSequence, moveX, moveY, dash, skill, potion, refill && testRoom);
+            InputMessage input = InputMessage.FromJoystick(LastSequence, moveX, moveY, dash, skill, potion, refill && testRoom, door);
 
             if (pending.Count == MaxPending)
             {

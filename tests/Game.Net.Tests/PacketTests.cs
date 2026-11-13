@@ -312,7 +312,7 @@ public class PacketTests
 
     [Theory]
     [InlineData(5, 0x80)]
-    [InlineData(7, 8)]
+    [InlineData(7, 16)]
     [InlineData(8, 7)]
     public void BadInputValuesAreRejected(int offset, byte value)
     {

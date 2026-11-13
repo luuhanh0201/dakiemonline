@@ -11,6 +11,7 @@ namespace Game.Rules
         public const string CharacterFile = "character.json";
         public const string MovementFile = "movement.json";
         public const string MapFile = "map.test.json";
+        public const string HouseFile = "map.house.json";
         public const string SkillsFile = "skills.thuy.json";
         public const string ItemsFile = "items.json";
         public const string BossFile = "boss.json";
@@ -49,7 +50,7 @@ namespace Game.Rules
         private GameConfig(
             CharacterConfig character,
             MovementConfig movement,
-            IReadOnlyList<MapBox> mapBoxes,
+            IReadOnlyList<MapConfig> maps,
             IReadOnlyList<SkillConfig> skills,
             PotionConfig potion,
             IReadOnlyList<GearItemConfig> gear,
@@ -58,7 +59,7 @@ namespace Game.Rules
         {
             Character = character;
             Movement = movement;
-            MapBoxes = mapBoxes;
+            Maps = maps;
             Skills = skills;
             Potion = potion;
             Gear = gear;
@@ -71,6 +72,7 @@ namespace Game.Rules
             CharacterFile,
             MovementFile,
             MapFile,
+            HouseFile,
             SkillsFile,
             ItemsFile,
             BossFile,
@@ -78,7 +80,29 @@ namespace Game.Rules
 
         public CharacterConfig Character { get; }
         public MovementConfig Movement { get; }
-        public IReadOnlyList<MapBox> MapBoxes { get; }
+
+        /// <summary>
+        /// Every map, in the order of <see cref="FileNames"/>; a map travels as its place here. The first is
+        /// the test map with the boss, where practising alone happens.
+        /// </summary>
+        public IReadOnlyList<MapConfig> Maps { get; }
+
+        /// <summary>The test map's boxes.</summary>
+        public IReadOnlyList<MapBox> MapBoxes => Maps[0].Boxes;
+
+        /// <summary>The place in <see cref="Maps"/> of the map with this id; -1 when there is none.</summary>
+        public int MapIndex(string id)
+        {
+            for (int index = 0; index < Maps.Count; index++)
+            {
+                if (Maps[index].Id == id)
+                {
+                    return index;
+                }
+            }
+
+            return -1;
+        }
         public IReadOnlyList<SkillConfig> Skills { get; }
         public PotionConfig Potion { get; }
 
@@ -102,7 +126,7 @@ namespace Game.Rules
             return new GameConfig(
                 ParseCharacter(Open(files, CharacterFile)),
                 ParseMovement(Open(files, MovementFile)),
-                ParseMap(Open(files, MapFile)),
+                ParseMaps(files),
                 ParseSkills(Open(files, SkillsFile)),
                 potion,
                 gear,
@@ -124,6 +148,7 @@ namespace Game.Rules
                 Channels = PositiveInt(root, "channels"),
                 PlayersPerChannel = PositiveInt(root, "playersPerChannel"),
                 SpawnX = root.Double("spawnX"),
+                StartMap = root.String("startMap"),
                 SnapshotEveryTicks = PositiveInt(root, "snapshotEveryTicks"),
                 ReconnectHoldSec = root.NotNegative("reconnectHoldSec"),
                 MaxQueuedInputs = PositiveInt(root, "maxQueuedInputs"),
@@ -410,11 +435,84 @@ namespace Game.Rules
             return config;
         }
 
-        private static IReadOnlyList<MapBox> ParseMap(ConfigObject root)
+        private static IReadOnlyList<MapConfig> ParseMaps(IReadOnlyDictionary<string, string> files)
         {
-            var header = new MapHeader();
-            ReadEntry(root, header);
+            var maps = new List<MapConfig>();
+            var roots = new List<ConfigObject>();
 
+            foreach (string file in new[] { MapFile, HouseFile })
+            {
+                ConfigObject root = Open(files, file);
+                MapConfig map = ParseMap(root);
+
+                if (maps.Exists(other => other.Id == map.Id))
+                {
+                    throw root.Fail("id", $"another map is already '{map.Id}'");
+                }
+
+                maps.Add(map);
+                roots.Add(root);
+            }
+
+            // Checked once every map is known, since a door may lead to a map read later.
+            for (int index = 0; index < maps.Count; index++)
+            {
+                foreach (MapDoor door in maps[index].Doors)
+                {
+                    if (!maps.Exists(map => map.Id == door.ToMap))
+                    {
+                        throw roots[index].Fail("doors", $"door '{door.Id}' leads to unknown map '{door.ToMap}'");
+                    }
+                }
+            }
+
+            return maps;
+        }
+
+        private static MapConfig ParseMap(ConfigObject root)
+        {
+            var map = new MapConfig();
+            ReadEntry(root, map);
+            map.SpawnX = root.Has("spawnX") ? root.Double("spawnX") : (double?)null;
+            map.Boss = root.Boolean("boss");
+            map.Shared = root.Boolean("shared");
+            map.Boxes = ParseBoxes(root);
+            map.Doors = ParseDoors(root);
+            root.RejectUnknownFields();
+            return map;
+        }
+
+        private static IReadOnlyList<MapDoor> ParseDoors(ConfigObject root)
+        {
+            var ids = new HashSet<string>();
+            var doors = new List<MapDoor>();
+
+            foreach (ConfigObject item in root.Array("doors"))
+            {
+                var door = new MapDoor
+                {
+                    Id = ReadId(item),
+                    Name = item.String("name"),
+                    X = item.Double("x"),
+                    Reach = item.Positive("reach"),
+                    ToMap = item.String("toMap"),
+                    ToX = item.Double("toX"),
+                };
+
+                if (!ids.Add(door.Id))
+                {
+                    throw item.Fail("id", $"duplicate id '{door.Id}'");
+                }
+
+                item.RejectUnknownFields();
+                doors.Add(door);
+            }
+
+            return doors;
+        }
+
+        private static IReadOnlyList<MapBox> ParseBoxes(ConfigObject root)
+        {
             var ids = new HashSet<string>();
             var boxes = new List<MapBox>();
 
@@ -449,8 +547,6 @@ namespace Game.Rules
                 item.RejectUnknownFields();
                 boxes.Add(box);
             }
-
-            root.RejectUnknownFields();
 
             return boxes.Count > 0 ? boxes : throw root.Fail("boxes", "needs at least one box");
         }
@@ -687,8 +783,5 @@ namespace Game.Rules
             return value >= 0 ? value : throw item.Fail(name, "cannot be negative");
         }
 
-        private sealed class MapHeader : ConfigEntry
-        {
-        }
     }
 }

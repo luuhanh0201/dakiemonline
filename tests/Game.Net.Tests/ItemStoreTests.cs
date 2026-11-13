@@ -86,9 +86,11 @@ internal static class ItemContract
     {
         Assert.Null((await store.LoadAsync(character, Starter)).PositionX);
 
-        await store.SavePositionAsync(character, 12.5d);
+        await store.SavePositionAsync(character, "map.house", 12.5d);
+        StoredBag back = await store.LoadAsync(character, Starter);
 
-        Assert.Equal(12.5d, (await store.LoadAsync(character, Starter)).PositionX);
+        Assert.Equal(12.5d, back.PositionX);
+        Assert.Equal("map.house", back.MapId);
     }
 }
 

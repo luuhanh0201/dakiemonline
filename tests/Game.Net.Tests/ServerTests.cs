@@ -352,16 +352,162 @@ public class ServerTests
         TickAll(server);
 
         var again = new FakeConnection();
-        double? saved = await server.Inventory.LoadAsync(identity.CharacterId);
+        MapSpot? saved = await server.Inventory.LoadAsync(identity.CharacterId);
         Session back = server.Hello(new HelloMessage(Packet.ProtocolVersion, Array.Empty<byte>()), again, identity, saved)!;
         await server.Inventory.AttachAsync(back, again);
         TickAll(server);
 
-        Assert.Equal(x, saved!.Value, 3);
+        Assert.Equal(x, saved!.Value.X, 3);
         Assert.Equal(x, again.Last<WelcomeMessage>().Self.Movement.X, 3);
         Assert.DoesNotContain(again.Last<InventoryMessage>().Items, item => item.Item == Item("gear.giap"));
         Assert.Equal(7, again.Last<InventoryMessage>().Items.Count);
     }
+    private static ServerConfig HouseServer()
+    {
+        ServerConfig server = TestConfig.Server(channels: 1, snapshotEvery: 1);
+        server.StartMap = "map.house";
+        return server;
+    }
+
+    private static void GoThroughDoor(GameServer server, Session session, IConnection connection, ref uint sequence, double atX)
+    {
+        RoomPlayer player = session.Runner.Room.Find(session.PlayerId)!;
+        MovementSnapshot at = player.Movement.Capture();
+        player.Movement.Restore(new MovementSnapshot(atX, 0d, 0d, at.Facing, true, at.Stamina, 0d, 0, 0, 0, 0, 0, 0, 0));
+        session.Runner.Input(session.PlayerId, connection, new InputMessage(++sequence, 0, 0, false, door: true));
+        TickAll(server);
+    }
+
+    [Fact]
+    public void EachPlayerHasAHouseOfTheirOwnAndMeetsOthersInTheYard()
+    {
+        var server = new GameServer(config, HouseServer());
+        var first = new FakeConnection();
+        var second = new FakeConnection();
+        Session a = Join(server, first);
+        Session b = Join(server, second);
+        TickAll(server, 2);
+        int house = config.MapIndex("map.house");
+        int yard = config.MapIndex("map.test");
+        MapDoor door = config.Maps[house].Doors[0];
+
+        Assert.Equal(house, first.Last<WelcomeMessage>().Map);
+        Assert.Equal(house, first.Last<SnapshotMessage>().Map);
+        Assert.Empty(first.Last<SnapshotMessage>().Others);
+        Assert.Empty(second.Last<SnapshotMessage>().Others);
+
+        uint sequenceA = 0;
+        uint sequenceB = 0;
+        GoThroughDoor(server, a, first, ref sequenceA, door.X);
+
+        Assert.Equal(yard, first.Last<SnapshotMessage>().Map);
+        Assert.Equal(door.ToX, first.Last<SnapshotMessage>().Self.Movement.X, 3);
+        Assert.Empty(first.Last<SnapshotMessage>().Others);
+        Assert.Empty(second.Last<SnapshotMessage>().Others);
+
+        GoThroughDoor(server, b, second, ref sequenceB, door.X);
+
+        Assert.Equal(b.PlayerId, Assert.Single(first.Last<SnapshotMessage>().Others).Id);
+        Assert.Equal(a.PlayerId, Assert.Single(second.Last<SnapshotMessage>().Others).Id);
+    }
+
+    [Fact]
+    public async Task AnItemDroppedInAHouseIsSeenAndTakenOnlyByItsOwner()
+    {
+        var server = new GameServer(config, HouseServer());
+        var first = new FakeConnection();
+        var second = new FakeConnection();
+        Session a = await Enter(server, first);
+        Session b = await Enter(server, second);
+
+        await Act(server, a, first, ItemActionKind.Drop, Owned(first, "gear.non"));
+        TickAll(server);
+        GroundItem lying = Assert.Single(first.Last<SnapshotMessage>().Ground);
+
+        Assert.Empty(second.Last<SnapshotMessage>().Ground);
+
+        await PickUp(server, b, second, lying.Id);
+
+        Assert.Equal(InventoryProblem.Gone, second.Last<InventoryMessage>().Problem);
+        Assert.Single(first.Last<SnapshotMessage>().Ground);
+
+        await PickUp(server, a, first, lying.Id);
+
+        Assert.Equal(InventoryProblem.None, first.Last<InventoryMessage>().Problem);
+    }
+
+    [Fact]
+    public void ADoorPressIsKeptWhenABurstOfInputsIsCutShort()
+    {
+        var server = new GameServer(config, HouseServer());
+        var client = new FakeConnection();
+        Session session = Join(server, client);
+        TickAll(server);
+        MapDoor door = config.Maps[config.MapIndex("map.house")].Doors[0];
+        RoomPlayer player = session.Runner.Room.Find(session.PlayerId)!;
+        MovementSnapshot at = player.Movement.Capture();
+        player.Movement.Restore(new MovementSnapshot(door.X, 0d, 0d, at.Facing, true, at.Stamina, 0d, 0, 0, 0, 0, 0, 0, 0));
+
+        // A slow frame sends more inputs at once than the server keeps; the press was the first of them.
+        uint sequence = 0;
+        session.Runner.Input(session.PlayerId, client, new InputMessage(++sequence, 0, 0, false, door: true));
+
+        for (int index = 0; index < TestConfig.Server().MaxQueuedInputs + 2; index++)
+        {
+            session.Runner.Input(session.PlayerId, client, new InputMessage(++sequence, 0, 0, false));
+        }
+
+        TickAll(server);
+
+        Assert.Equal(config.MapIndex("map.test"), client.Last<SnapshotMessage>().Map);
+    }
+
+    [Fact]
+    public void TheBossAndItsBlowsStayInTheYard()
+    {
+        var server = new GameServer(config, HouseServer());
+        var inside = new FakeConnection();
+        var outside = new FakeConnection();
+        Join(server, inside);
+        Session b = Join(server, outside);
+        TickAll(server);
+        uint sequence = 0;
+        GoThroughDoor(server, b, outside, ref sequence, config.Maps[config.MapIndex("map.house")].Doors[0].X);
+
+        for (int tick = 0; tick < Ticks.PerSecond * 10; tick++)
+        {
+            TickAll(server);
+
+            Assert.DoesNotContain(inside.Last<SnapshotMessage>().Events, item => item.Kind == RoomEventKind.Boss);
+        }
+
+        Assert.Equal(config.Character.MaxHp, inside.Last<SnapshotMessage>().Self.Resources.Hp);
+    }
+
+    [Fact]
+    public async Task ACharacterComesBackOnTheMapItLeftFrom()
+    {
+        var store = new Game.Server.Db.InMemoryItemStore();
+        var server = new GameServer(config, HouseServer(), items: store);
+        var identity = new PlayerIdentity(78, "Lữ Khách");
+        var first = new FakeConnection();
+        Session session = server.Hello(new HelloMessage(Packet.ProtocolVersion, Array.Empty<byte>()), first, identity)!;
+        TickAll(server);
+        uint sequence = 0;
+        GoThroughDoor(server, session, first, ref sequence, config.Maps[config.MapIndex("map.house")].Doors[0].X);
+        session.Runner.Leave(session.PlayerId, first);
+        TickAll(server);
+        await Task.Delay(50);
+
+        MapSpot? saved = await server.Inventory.LoadAsync(identity.CharacterId);
+        var again = new FakeConnection();
+        server.Hello(new HelloMessage(Packet.ProtocolVersion, Array.Empty<byte>()), again, identity, saved);
+        TickAll(server);
+
+        Assert.Equal(config.MapIndex("map.test"), saved!.Value.Map);
+        Assert.Equal(config.MapIndex("map.test"), again.Last<WelcomeMessage>().Map);
+    }
+
     [Fact]
     public void ChannelsAreSeparate()
     {

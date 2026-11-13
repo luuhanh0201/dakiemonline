@@ -53,7 +53,7 @@ namespace DaKiem.Client.Editor
             camera.targetTexture = target;
 
             GameConfig config = ReadConfig();
-            var world = new WorldView(config.MapBoxes);
+            var world = new WorldView(config);
             var character = new CharacterView();
             var boss = new BossView();
             var hud = new HudView();

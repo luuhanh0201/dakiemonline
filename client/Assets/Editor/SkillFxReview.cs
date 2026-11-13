@@ -31,7 +31,7 @@ namespace DaKiem.Client.Editor
             camera.aspect = Width / (float)Height;
             camera.targetTexture = target;
             camera.clearFlags = CameraClearFlags.SolidColor;
-            var world = new WorldView(ReadConfig().MapBoxes);
+            var world = new WorldView(ReadConfig());
             foreach (var renderer in Object.FindObjectsByType<SpriteRenderer>()) renderer.enabled = false;
             camera.orthographicSize = 1.65f;
             camera.backgroundColor = new Color(0.035f, 0.065f, 0.12f);

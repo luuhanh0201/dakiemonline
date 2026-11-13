@@ -29,12 +29,21 @@ public sealed class InventoryService
 
     /// <summary>
     /// Loads a saved character's bag before it joins a channel, giving the starter items the first
-    /// time, and returns where it last stood.
+    /// time, and returns where it last stood. A saved spot on a map that no longer exists is
+    /// forgotten, so the character starts over on the start map; a spot saved before there were
+    /// maps is on the test map.
     /// </summary>
-    public async Task<double?> LoadAsync(long characterId, CancellationToken cancel = default)
+    public async Task<MapSpot?> LoadAsync(long characterId, CancellationToken cancel = default)
     {
         Bag bag = await LoadBagAsync(store, characterId, cancel);
-        return bag.PositionX;
+
+        if (bag.PositionX == null)
+        {
+            return null;
+        }
+
+        int map = bag.MapId == null ? 0 : config.MapIndex(bag.MapId);
+        return map < 0 ? null : new MapSpot(map, bag.PositionX.Value);
     }
 
     /// <summary>Sends the bag to a player who just joined or came back, and dresses them in the channel.</summary>
@@ -81,7 +90,7 @@ public sealed class InventoryService
     }
 
     /// <summary>A player's place was given up: keeps where they stood and lets go of the cached bag.</summary>
-    public async Task LeftAsync(Session session, double x)
+    public async Task LeftAsync(Session session, MapSpot spot)
     {
         bags.TryRemove(Key(session), out _);
 
@@ -92,7 +101,7 @@ public sealed class InventoryService
 
         try
         {
-            await store.SavePositionAsync(session.Identity.CharacterId, x);
+            await store.SavePositionAsync(session.Identity.CharacterId, config.Maps[spot.Map].Id, spot.X);
         }
         catch (Exception error)
         {
@@ -198,7 +207,7 @@ public sealed class InventoryService
     private async Task<Bag> LoadBagAsync(IItemStore from, long characterId, CancellationToken cancel)
     {
         StoredBag stored = await from.LoadAsync(characterId, Starter(), cancel);
-        var bag = new Bag(characterId) { Items = Owned(stored.Items, characterId), PositionX = stored.PositionX };
+        var bag = new Bag(characterId) { Items = Owned(stored.Items, characterId), PositionX = stored.PositionX, MapId = stored.MapId };
         return bags.GetOrAdd(characterId, bag);
     }
 
@@ -277,5 +286,6 @@ public sealed class InventoryService
         public SemaphoreSlim Gate { get; } = new(1, 1);
         public List<OwnedItem> Items { get; set; } = new();
         public double? PositionX { get; set; }
+        public string? MapId { get; set; }
     }
 }

@@ -96,9 +96,11 @@ namespace Game.Net
             uint lastInputSequence,
             bool testRoom,
             PlayerSnapshot self,
-            string characterName = "")
+            string characterName = "",
+            int map = 0)
         {
             CharacterName = characterName;
+            Map = map;
             PlayerId = playerId;
             ChannelId = channelId;
             ServerTick = serverTick;
@@ -127,6 +129,9 @@ namespace Game.Net
         /// <summary>The name the player gave their character, for the HUD.</summary>
         public string CharacterName { get; }
 
+        /// <summary>Which map the player is on, as its place in GameConfig.Maps.</summary>
+        public int Map { get; }
+
         internal override void Write(PacketWriter writer)
         {
             writer.Int32(PlayerId);
@@ -138,6 +143,7 @@ namespace Game.Net
             writer.Bool(TestRoom);
             SnapshotCodec.Write(writer, Self);
             writer.Text(CharacterName);
+            writer.Byte(checked((byte)Map));
         }
 
         internal static WelcomeMessage Read(ref PacketReader reader)
@@ -151,7 +157,8 @@ namespace Game.Net
                 reader.UInt32(),
                 reader.Bool(),
                 SnapshotCodec.ReadPlayer(ref reader),
-                reader.Text());
+                reader.Text(),
+                reader.Byte());
         }
     }
 
@@ -193,8 +200,9 @@ namespace Game.Net
         private const byte DashFlag = 1;
         private const byte PotionFlag = 2;
         private const byte RefillFlag = 4;
+        private const byte DoorFlag = 8;
 
-        public InputMessage(uint sequence, sbyte moveX, sbyte moveY, bool dash, SkillSlot? skill = null, bool potion = false, bool refill = false)
+        public InputMessage(uint sequence, sbyte moveX, sbyte moveY, bool dash, SkillSlot? skill = null, bool potion = false, bool refill = false, bool door = false)
         {
             if (moveX == sbyte.MinValue || moveY == sbyte.MinValue)
             {
@@ -208,6 +216,7 @@ namespace Game.Net
             Skill = skill;
             Potion = potion;
             Refill = refill;
+            Door = door;
         }
 
         public override MessageType Type => MessageType.Input;
@@ -221,6 +230,9 @@ namespace Game.Net
         /// <summary>The test room's refill button.</summary>
         public bool Refill { get; }
 
+        /// <summary>Goes through the door the player stands at.</summary>
+        public bool Door { get; }
+
         public static InputMessage FromJoystick(
             uint sequence,
             double moveX,
@@ -228,9 +240,10 @@ namespace Game.Net
             bool dash,
             SkillSlot? skill = null,
             bool potion = false,
-            bool refill = false)
+            bool refill = false,
+            bool door = false)
         {
-            return new InputMessage(sequence, Quantize(moveX), Quantize(moveY), dash, skill, potion, refill);
+            return new InputMessage(sequence, Quantize(moveX), Quantize(moveY), dash, skill, potion, refill, door);
         }
 
         public RoomIntent ToIntent()
@@ -238,7 +251,8 @@ namespace Game.Net
             return new RoomIntent(
                 new MovementIntent(MoveX / Steps, MoveY / Steps, Dash),
                 new CombatIntent(Skill, Potion),
-                Refill);
+                Refill,
+                Door);
         }
 
         internal override void Write(PacketWriter writer)
@@ -246,7 +260,7 @@ namespace Game.Net
             writer.UInt32(Sequence);
             writer.SByte(MoveX);
             writer.SByte(MoveY);
-            writer.Byte((byte)((Dash ? DashFlag : 0) | (Potion ? PotionFlag : 0) | (Refill ? RefillFlag : 0)));
+            writer.Byte((byte)((Dash ? DashFlag : 0) | (Potion ? PotionFlag : 0) | (Refill ? RefillFlag : 0) | (Door ? DoorFlag : 0)));
             SnapshotCodec.WriteSlot(writer, Skill);
         }
 
@@ -257,7 +271,7 @@ namespace Game.Net
             sbyte moveY = reader.SByte();
             byte flags = reader.Byte();
 
-            if ((flags & ~(DashFlag | PotionFlag | RefillFlag)) != 0)
+            if ((flags & ~(DashFlag | PotionFlag | RefillFlag | DoorFlag)) != 0)
             {
                 throw new ProtocolException($"unknown input flags {flags}");
             }
@@ -270,7 +284,8 @@ namespace Game.Net
                 (flags & DashFlag) != 0,
                 skill,
                 (flags & PotionFlag) != 0,
-                (flags & RefillFlag) != 0);
+                (flags & RefillFlag) != 0,
+                (flags & DoorFlag) != 0);
         }
 
         private static sbyte Quantize(double value)
@@ -451,9 +466,11 @@ namespace Game.Net
             IReadOnlyList<RemoteProjectile> projectiles,
             IReadOnlyList<NetEvent> events,
             Appearance selfAppearance = default,
-            IReadOnlyList<GroundItem>? ground = null)
+            IReadOnlyList<GroundItem>? ground = null,
+            int map = 0)
         {
             ground ??= Array.Empty<GroundItem>();
+            Map = map;
 
             if (others.Count > byte.MaxValue || projectiles.Count > byte.MaxValue || events.Count > byte.MaxValue || ground.Count > byte.MaxValue)
             {
@@ -492,11 +509,15 @@ namespace Game.Net
         /// <summary>Items lying on the ground in the channel that nobody is picking up.</summary>
         public IReadOnlyList<GroundItem> Ground { get; }
 
+        /// <summary>Which map this player is on now; it changes when they go through a door.</summary>
+        public int Map { get; }
+
         internal override void Write(PacketWriter writer)
         {
             writer.UInt32(ServerTick);
             writer.UInt32(AckSequence);
             SnapshotCodec.Write(writer, Self);
+            writer.Byte(checked((byte)Map));
             WriteAppearance(writer, SelfAppearance);
             SnapshotCodec.Write(writer, Boss);
             writer.UInt16(checked((ushort)BossRespawnTicks));
@@ -557,6 +578,7 @@ namespace Game.Net
             uint tick = reader.UInt32();
             uint ack = reader.UInt32();
             PlayerSnapshot self = SnapshotCodec.ReadPlayer(ref reader);
+            int map = reader.Byte();
             Appearance selfAppearance = ReadAppearance(ref reader);
             BossSnapshot boss = SnapshotCodec.ReadBoss(ref reader);
             int bossRespawn = reader.UInt16();
@@ -612,7 +634,7 @@ namespace Game.Net
                 ground[index] = new GroundItem(reader.Int32(), reader.Byte(), reader.Single(), reader.Single());
             }
 
-            return new SnapshotMessage(tick, ack, self, boss, bossRespawn, others, projectiles, events, selfAppearance, ground);
+            return new SnapshotMessage(tick, ack, self, boss, bossRespawn, others, projectiles, events, selfAppearance, ground, map);
         }
 
         /// <summary>One byte per shown slot. The client checks the items against its own catalog.</summary>

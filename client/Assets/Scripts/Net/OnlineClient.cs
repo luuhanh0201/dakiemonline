@@ -69,6 +69,9 @@ namespace DaKiem.Client.Net
         /// <summary>Players in the latest snapshot; tracks of anyone else are dropped.</summary>
         public IReadOnlyList<int> Present => present;
 
+        /// <summary>The map this player is on, as its place in GameConfig.Maps; doors change it.</summary>
+        public int Map { get; private set; }
+
         /// <summary>The server allows the refill button here.</summary>
         public bool TestRoom { get; private set; }
 
@@ -100,6 +103,9 @@ namespace DaKiem.Client.Net
 
         /// <summary>Raised when the local player starts over from a Welcome, so views can stop blending.</summary>
         public event Action Welcomed;
+
+        /// <summary>Raised when the server moves this player to another map, through a door.</summary>
+        public event Action MapChanged;
 
         /// <summary>Raised for each round trip measured, in milliseconds.</summary>
         public event Action<double> RoundTrip;
@@ -145,14 +151,14 @@ namespace DaKiem.Client.Net
         }
 
         /// <summary>One game tick of input: predicted at once and sent to the server.</summary>
-        public void Tick(double moveX, double moveY, bool dash, in CombatIntent combat, bool refill)
+        public void Tick(double moveX, double moveY, bool dash, in CombatIntent combat, bool refill, bool door = false)
         {
             if (Status != OnlineStatus.Playing)
             {
                 return;
             }
 
-            InputMessage input = Predictor.Advance(moveX, moveY, dash, combat.SkillPressed, combat.PotionPressed, refill);
+            InputMessage input = Predictor.Advance(moveX, moveY, dash, combat.SkillPressed, combat.PotionPressed, refill, door);
             transport.Send(Packet.Encode(input));
         }
 
@@ -242,13 +248,19 @@ namespace DaKiem.Client.Net
 
         private void OnWelcome(WelcomeMessage welcome)
         {
+            if (!KnownMap(welcome.Map))
+            {
+                return;
+            }
+
             bool resumedHere = welcome.Resumed && welcome.PlayerId == PlayerId;
             token = welcome.Token;
             CharacterName = welcome.CharacterName;
             PlayerId = welcome.PlayerId;
             ChannelId = welcome.ChannelId;
             TestRoom = welcome.TestRoom;
-            Predictor = new Predictor(config, welcome.Self, welcome.LastInputSequence, welcome.TestRoom) { Boss = Boss };
+            Map = welcome.Map;
+            Predictor = new Predictor(config, welcome.Self, welcome.LastInputSequence, welcome.TestRoom, welcome.Map) { Boss = BossHere };
             BossTrack = new RemoteTrack();
             Ground = Array.Empty<GroundItem>();
             events.Clear();
@@ -263,6 +275,14 @@ namespace DaKiem.Client.Net
 
         private void OnSnapshot(SnapshotMessage snapshot)
         {
+            if (!KnownMap(snapshot.Map))
+            {
+                return;
+            }
+
+            bool moved = snapshot.Map != Map;
+            Map = snapshot.Map;
+            Predictor.Map = snapshot.Map;
             ServerClock.Observe(snapshot.ServerTick);
             UpdateBoss(snapshot);
             Predictor.Reconcile(snapshot.AckSequence, snapshot.Self);
@@ -306,6 +326,29 @@ namespace DaKiem.Client.Net
                     tracks.Remove(id);
                 }
             }
+
+            if (moved)
+            {
+                MapChanged?.Invoke();
+            }
+        }
+
+        /// <summary>Whether the boss is on this player's map, so they can see and aim at it.</summary>
+        public bool BossOnMap => config.Maps[Map].Boss;
+
+        /// <summary>The boss for prediction to aim at; none on a map without it.</summary>
+        private BossState BossHere => BossOnMap ? Boss : null;
+
+        /// <summary>A map number this client has no file for means it is out of date with the server.</summary>
+        private bool KnownMap(int map)
+        {
+            if (map < config.Maps.Count)
+            {
+                return true;
+            }
+
+            Fail($"Server gửi map số {map}, bản chơi này chưa có. Cần cập nhật bản chơi.");
+            return false;
         }
 
         /// <summary>Hands over the room's events since the last call, so each is shown once.</summary>
@@ -328,7 +371,7 @@ namespace DaKiem.Client.Net
                 Boss.Restore(snapshot.Boss);
             }
 
-            Predictor.Boss = Boss;
+            Predictor.Boss = BossHere;
             BossRespawnTicks = snapshot.BossRespawnTicks;
             BossTrack.Add(
                 snapshot.ServerTick,

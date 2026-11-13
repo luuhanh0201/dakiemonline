@@ -45,11 +45,11 @@ public sealed class ChannelRunner
     private readonly ConcurrentQueue<Action> inbox = new();
     private readonly Dictionary<int, PlayerSlot> slots = new();
     private readonly Dictionary<int, RoomIntent> intents = new();
-    private readonly List<NetEvent> pendingEvents = new();
+    private readonly List<(NetEvent Event, int Map)> pendingEvents = new();
     private readonly GameConfig config;
     private readonly int holdTicks;
     private readonly Dictionary<int, LyingItem> ground = new();
-    private readonly ConcurrentDictionary<int, double> positions = new();
+    private readonly ConcurrentDictionary<int, MapSpot> positions = new();
     private int lastGroundId;
     private int currentTick;
 
@@ -71,12 +71,12 @@ public sealed class ChannelRunner
     public event Action<int>? PlayerRemoved;
 
     /// <summary>Called just before a player's place is given up, with where they stood, so it can be saved.</summary>
-    public event Action<Session, double>? PlayerLeaving;
+    public event Action<Session, MapSpot>? PlayerLeaving;
 
-    /// <param name="spawnX">Where a saved character last stood, or null for the spawn point.</param>
-    public void Join(Session session, IConnection connection, double? spawnX = null)
+    /// <param name="spawn">Where a saved character last stood, or null for the start map's spawn point.</param>
+    public void Join(Session session, IConnection connection, MapSpot? spawn = null)
     {
-        inbox.Enqueue(() => AddPlayer(session, connection, spawnX));
+        inbox.Enqueue(() => AddPlayer(session, connection, spawn));
     }
 
     public void Resume(Session session, IConnection connection)
@@ -110,7 +110,7 @@ public sealed class ChannelRunner
             double x = player?.Movement.X ?? server.SpawnX;
             double y = player?.Movement.Y ?? 0d;
             int id = ++lastGroundId;
-            ground[id] = new LyingItem(id, item, quantity, x, y, Room.Tick + Ticks.FromSeconds(config.Bag.GroundLifetimeSec));
+            ground[id] = new LyingItem(id, item, quantity, x, y, Room.Tick + Ticks.FromSeconds(config.Bag.GroundLifetimeSec), player?.Map ?? Room.StartMap, playerId);
         });
     }
 
@@ -125,8 +125,11 @@ public sealed class ChannelRunner
         {
             RoomPlayer? player = Room.Find(playerId);
 
-            if (!ground.TryGetValue(groundId, out LyingItem? lying) || lying.ClaimedBy != 0)
+            if (!ground.TryGetValue(groundId, out LyingItem? lying)
+                || lying.ClaimedBy != 0
+                || (player != null && !MapRules.SeeEachOther(config, lying.Map, player.Map, lying.Owner, playerId)))
             {
+                // On another map, or in someone else's house, the item is not there for this player.
                 result.SetResult((InventoryProblem.Gone, 0, 0));
             }
             else if (player == null || player.IsDead || !InventoryRules.InReach(config.Bag, player.Movement.X, player.Movement.Y, lying.X, lying.Y))
@@ -158,7 +161,7 @@ public sealed class ChannelRunner
     }
 
     /// <summary>Where each player in the channel stood at the last snapshot, for saving when the server stops.</summary>
-    public IReadOnlyDictionary<int, double> Positions => positions;
+    public IReadOnlyDictionary<int, MapSpot> Positions => positions;
 
     public void Disconnected(int playerId, IConnection connection)
     {
@@ -238,9 +241,9 @@ public sealed class ChannelRunner
         }
     }
 
-    private void AddPlayer(Session session, IConnection connection, double? spawnX)
+    private void AddPlayer(Session session, IConnection connection, MapSpot? spawn)
     {
-        RoomPlayer? player = Room.Join(session.PlayerId, spawnX);
+        RoomPlayer? player = Room.Join(session.PlayerId, spawn?.X, spawn?.Map);
 
         if (player == null)
         {
@@ -287,7 +290,8 @@ public sealed class ChannelRunner
             slot.LastSequence,
             Room.TestRoom,
             player.Capture(),
-            slot.Session.Identity?.Name ?? string.Empty)));
+            slot.Session.Identity?.Name ?? string.Empty,
+            player.Map)));
     }
 
     private void QueueInput(int playerId, IConnection connection, InputMessage input)
@@ -341,7 +345,7 @@ public sealed class ChannelRunner
         if (slots.Remove(playerId, out PlayerSlot? slot))
         {
             slot.Connection?.Close();
-            PlayerLeaving?.Invoke(slot.Session, Room.Find(playerId)?.Movement.X ?? server.SpawnX);
+            PlayerLeaving?.Invoke(slot.Session, Room.Find(playerId)?.Spot ?? new MapSpot(Room.StartMap, server.SpawnX));
             Room.Leave(playerId);
             positions.TryRemove(playerId, out _);
             PlayerRemoved?.Invoke(playerId);
@@ -370,22 +374,30 @@ public sealed class ChannelRunner
         }
     }
 
-    /// <summary>Keeps what happened since the last snapshot; a snapshot carries at most 255 events.</summary>
+    /// <summary>
+    /// Keeps what happened since the last snapshot, with the map it happened on; a snapshot carries
+    /// at most 255 events.
+    /// </summary>
     private void CollectEvents()
     {
         foreach (RoomEvent item in Room.Events)
         {
             if (pendingEvents.Count < byte.MaxValue)
             {
-                pendingEvents.Add(NetEvent.From(item, config.Boss));
+                int map = item.PlayerId == 0 ? Room.BossMap : Room.Find(item.PlayerId)?.Map ?? Room.BossMap;
+                pendingEvents.Add((NetEvent.From(item, config.Boss), map));
             }
         }
     }
 
+    /// <summary>
+    /// Each player hears only about their own map. On a map that is not shared, such as the house,
+    /// they see only themselves and what they dropped there.
+    /// </summary>
     private void SendSnapshots()
     {
-        var everyone = new List<RemotePlayer>(Room.Count);
-        var projectiles = new List<RemoteProjectile>();
+        var everyone = new List<(RemotePlayer Player, int Map)>(Room.Count);
+        var projectiles = new List<(RemoteProjectile Shot, int Map)>();
 
         foreach (RoomPlayer player in Room.Players)
         {
@@ -397,7 +409,7 @@ public sealed class ChannelRunner
             flags |= slots[player.Id].Connection == null ? RemoteFlags.Away : RemoteFlags.None;
             flags |= player.IsDead ? RemoteFlags.Dead : RemoteFlags.None;
             CombatSnapshot cast = combat.Capture();
-            everyone.Add(new RemotePlayer(
+            everyone.Add((new RemotePlayer(
                 player.Id,
                 (float)movement.X,
                 (float)movement.Y,
@@ -407,29 +419,21 @@ public sealed class ChannelRunner
                 cast.CastTicks,
                 cast.ComboStep,
                 (sbyte)(cast.Direction == 0 ? movement.Facing : cast.Direction),
-                slots[player.Id].Appearance));
+                slots[player.Id].Appearance), player.Map));
 
             foreach (ProjectileSnapshot shot in cast.Projectiles)
             {
-                if (projectiles.Count < byte.MaxValue)
-                {
-                    projectiles.Add(new RemoteProjectile(player.Id, shot.Slot, (float)shot.X, (float)shot.Y, (sbyte)shot.Direction));
-                }
+                projectiles.Add((new RemoteProjectile(player.Id, shot.Slot, (float)shot.X, (float)shot.Y, (sbyte)shot.Direction), player.Map));
             }
         }
 
         BossSnapshot boss = Room.Boss.Capture();
         var events = pendingEvents.ToArray();
         pendingEvents.Clear();
-        GroundItem[] lyingNow = ground.Values
-            .Where(lying => lying.ClaimedBy == 0)
-            .Take(byte.MaxValue)
-            .Select(lying => new GroundItem(lying.Id, lying.Item, (float)lying.X, (float)lying.Y))
-            .ToArray();
 
         foreach (RoomPlayer player in Room.Players)
         {
-            positions[player.Id] = player.Movement.X;
+            positions[player.Id] = player.Spot;
         }
 
         foreach (PlayerSlot slot in slots.Values)
@@ -439,26 +443,50 @@ public sealed class ChannelRunner
                 continue;
             }
 
-            List<RemotePlayer> others = everyone.FindAll(player => player.Id != slot.PlayerId);
+            RoomPlayer self = Room.Find(slot.PlayerId)!;
+            int map = self.Map;
+            int id = slot.PlayerId;
+            List<RemotePlayer> others = everyone
+                .Where(entry => entry.Player.Id != id && MapRules.SeeEachOther(config, entry.Map, map, entry.Player.Id, id))
+                .Select(entry => entry.Player)
+                .ToList();
+            List<RemoteProjectile> shots = projectiles
+                .Where(entry => MapRules.SeeEachOther(config, entry.Map, map, entry.Shot.OwnerId, id))
+                .Select(entry => entry.Shot)
+                .Take(byte.MaxValue)
+                .ToList();
+            NetEvent[] heard = events
+                .Where(entry => MapRules.SeeEachOther(config, entry.Map, map, entry.Event.PlayerId == 0 ? id : entry.Event.PlayerId, id))
+                .Select(entry => entry.Event)
+                .ToArray();
+            GroundItem[] lyingHere = ground.Values
+                .Where(lying => lying.ClaimedBy == 0 && MapRules.SeeEachOther(config, lying.Map, map, lying.Owner, id))
+                .Take(byte.MaxValue)
+                .Select(lying => new GroundItem(lying.Id, lying.Item, (float)lying.X, (float)lying.Y))
+                .ToArray();
             var snapshot = new SnapshotMessage(
                 (uint)Room.Tick,
                 slot.LastSequence,
-                Room.Find(slot.PlayerId)!.Capture(),
+                self.Capture(),
                 boss,
                 Room.BossRespawnTicksLeft,
                 others,
-                projectiles,
-                events,
+                shots,
+                heard,
                 slot.Appearance,
-                lyingNow);
+                lyingHere,
+                map);
             slot.Connection.Send(Packet.Encode(snapshot));
         }
     }
 
-    /// <summary>An item on the ground; ClaimedBy is the player picking it up, 0 while it is free.</summary>
+    /// <summary>
+    /// An item on the ground; ClaimedBy is the player picking it up, 0 while it is free. Map and Owner
+    /// say who can see it: anyone on a shared map, only the owner in a house.
+    /// </summary>
     private sealed class LyingItem
     {
-        public LyingItem(int id, int item, int quantity, double x, double y, int expiresTick)
+        public LyingItem(int id, int item, int quantity, double x, double y, int expiresTick, int map, int owner)
         {
             Id = id;
             Item = item;
@@ -466,6 +494,8 @@ public sealed class ChannelRunner
             X = x;
             Y = y;
             ExpiresTick = expiresTick;
+            Map = map;
+            Owner = owner;
         }
 
         public int Id { get; }
@@ -474,6 +504,8 @@ public sealed class ChannelRunner
         public double X { get; }
         public double Y { get; }
         public int ExpiresTick { get; }
+        public int Map { get; }
+        public int Owner { get; }
         public int ClaimedBy { get; set; }
     }
 
@@ -482,6 +514,7 @@ public sealed class ChannelRunner
         private readonly Queue<InputMessage> inputs = new();
         private readonly int maxQueued;
         private MovementIntent lastMove;
+        private bool doorWaiting;
 
         public PlayerSlot(Session session, IConnection connection, int maxQueued)
         {
@@ -512,7 +545,11 @@ public sealed class ChannelRunner
 
             while (inputs.Count > maxQueued)
             {
-                LastSequence = inputs.Dequeue().Sequence;
+                InputMessage dropped = inputs.Dequeue();
+                LastSequence = dropped.Sequence;
+
+                // A door press is a single tap that is never predicted, so it must not be lost with a burst of old inputs.
+                doorWaiting |= dropped.Door;
             }
         }
 
@@ -520,6 +557,7 @@ public sealed class ChannelRunner
         {
             inputs.Clear();
             lastMove = default;
+            doorWaiting = false;
         }
 
         /// <summary>
@@ -537,6 +575,13 @@ public sealed class ChannelRunner
             LastSequence = input.Sequence;
             RoomIntent intent = input.ToIntent();
             lastMove = intent.Move;
+
+            if (doorWaiting)
+            {
+                doorWaiting = false;
+                intent = new RoomIntent(intent.Move, intent.Combat, intent.Refill, door: true);
+            }
+
             return intent;
         }
     }

@@ -2,6 +2,7 @@ using System.Net.WebSockets;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
+using Game.Rules;
 using Game.Server;
 using Game.Server.Accounts;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,10 +17,22 @@ public sealed class WebSocketTests : IAsyncLifetime
     private WebApplication app = null!;
     private Uri socketUri = null!;
     private Uri baseUri = null!;
+    private string configDir = null!;
 
     public async Task InitializeAsync()
     {
-        app = ServerApp.Build(new[] { "--urls", "http://127.0.0.1:0", "--config", TestConfig.Dir, "--web", "no-web-build", "--db", "memory" });
+        // The real config, except that players start on the test map, where they see each other.
+        configDir = Directory.CreateTempSubdirectory("dakiem-config-").FullName;
+
+        foreach (string file in Directory.GetFiles(TestConfig.Dir, "*.json"))
+        {
+            File.Copy(file, Path.Combine(configDir, Path.GetFileName(file)));
+        }
+
+        string serverFile = Path.Combine(configDir, GameConfig.ServerFile);
+        File.WriteAllText(serverFile, File.ReadAllText(serverFile).Replace("\"startMap\": \"map.house\"", "\"startMap\": \"map.test\""));
+
+        app = ServerApp.Build(new[] { "--urls", "http://127.0.0.1:0", "--config", configDir, "--web", "no-web-build", "--db", "memory" });
         await app.StartAsync();
         string address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First();
         baseUri = new Uri(address);
@@ -30,6 +43,7 @@ public sealed class WebSocketTests : IAsyncLifetime
     {
         await app.StopAsync();
         await app.DisposeAsync();
+        Directory.Delete(configDir, recursive: true);
     }
 
     private sealed class Client : IAsyncDisposable

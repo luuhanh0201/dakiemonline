@@ -33,7 +33,7 @@ public sealed class GameServer
         {
             occupancy[runner.Id] = 0;
             runner.PlayerRemoved += playerId => Forget(runner, playerId);
-            runner.PlayerLeaving += (session, x) => _ = Inventory.LeftAsync(session, x);
+            runner.PlayerLeaving += (session, spot) => _ = Inventory.LeftAsync(session, spot);
         }
     }
 
@@ -46,7 +46,7 @@ public sealed class GameServer
     /// <summary>When the server stops, keeps where everyone in a channel stood, as leaving would.</summary>
     public async Task SavePositionsAsync()
     {
-        List<(Session Session, double X)> playing;
+        List<(Session Session, MapSpot Spot)> playing;
 
         lock (gate)
         {
@@ -56,7 +56,7 @@ public sealed class GameServer
                 .ToList();
         }
 
-        await Task.WhenAll(playing.Select(entry => Inventory.LeftAsync(entry.Session, entry.X)));
+        await Task.WhenAll(playing.Select(entry => Inventory.LeftAsync(entry.Session, entry.Spot)));
     }
 
     public int SessionCount
@@ -85,8 +85,8 @@ public sealed class GameServer
     /// Handles Hello and returns the session the connection now speaks for, or null if refused. A
     /// character already in a channel is taken over by the new connection, and the old one is told so.
     /// </summary>
-    /// <param name="spawnX">Where a saved character last stood; used only when it comes into a channel anew.</param>
-    public Session? Hello(HelloMessage hello, IConnection connection, PlayerIdentity? identity = null, double? spawnX = null)
+    /// <param name="spawn">Where a saved character last stood; used only when it comes into a channel anew.</param>
+    public Session? Hello(HelloMessage hello, IConnection connection, PlayerIdentity? identity = null, MapSpot? spawn = null)
     {
         if (hello.ProtocolVersion != Packet.ProtocolVersion)
         {
@@ -136,7 +136,7 @@ public sealed class GameServer
             }
 
             occupancy[runner.Id]++;
-            runner.Join(session, connection, spawnX);
+            runner.Join(session, connection, spawn);
             return session;
         }
     }

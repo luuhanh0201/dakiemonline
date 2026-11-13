@@ -6,11 +6,12 @@ namespace Game.Rules
     /// <summary>What one player asks for in one tick of a room.</summary>
     public readonly struct RoomIntent
     {
-        public RoomIntent(in MovementIntent move, in CombatIntent combat, bool refill = false)
+        public RoomIntent(in MovementIntent move, in CombatIntent combat, bool refill = false, bool door = false)
         {
             Move = move;
             Combat = combat;
             Refill = refill;
+            Door = door;
         }
 
         public MovementIntent Move { get; }
@@ -18,6 +19,9 @@ namespace Game.Rules
 
         /// <summary>The test room's refill button; ignored outside a test room.</summary>
         public bool Refill { get; }
+
+        /// <summary>Goes through the door the player stands at, if any.</summary>
+        public bool Door { get; }
     }
 
     public enum RoomEventKind
@@ -32,6 +36,9 @@ namespace Game.Rules
         Refilled,
         BossDefeated,
         BossRespawned,
+
+        /// <summary>The player went through a door; they are on another map now.</summary>
+        ChangedMap,
     }
 
     public readonly struct RoomEvent
@@ -69,6 +76,11 @@ namespace Game.Rules
         public CombatState Combat { get; private set; }
         public ResourceState Resources { get; private set; }
 
+        /// <summary>Which map the player is on, as its place in <see cref="GameConfig.Maps"/>.</summary>
+        public int Map { get; internal set; }
+
+        public MapSpot Spot => new MapSpot(Map, Movement.X);
+
         /// <summary>Ticks until a dead player comes back; 0 while alive.</summary>
         public int RespawnTicksLeft { get; internal set; }
 
@@ -86,17 +98,26 @@ namespace Game.Rules
             Resources = resources;
             RespawnTicksLeft = 0;
         }
+
+        /// <summary>Arrives on another map standing, keeping stamina, facing, health and skills.</summary>
+        internal void MoveTo(int map, double x)
+        {
+            var arrived = new MovementState(x, 0d, Movement.Stamina) { Facing = Movement.Facing };
+            Map = map;
+            Movement = arrived;
+        }
     }
 
     /// <summary>
-    /// One copy of the test map: several players fighting one boss, advanced a tick at a time.
-    /// Players do not hurt each other. The dead come back at the spawn point; so does a beaten boss.
+    /// One channel: several players fighting one boss on the test map, advanced a tick at a time.
+    /// Players do not hurt each other. The dead come back at their map's spawn point; a beaten boss
+    /// comes back too. Each player is on one map and doors take them to another.
     /// </summary>
     public sealed class Room
     {
         private readonly GameConfig config;
         private readonly ServerConfig server;
-        private readonly CollisionMap map;
+        private readonly CollisionMap[] maps;
         private readonly SortedDictionary<int, RoomPlayer> players = new SortedDictionary<int, RoomPlayer>();
         private readonly List<RoomEvent> events = new List<RoomEvent>();
         private readonly List<CombatEvent> playerEvents = new List<CombatEvent>();
@@ -108,11 +129,36 @@ namespace Game.Rules
             Id = id;
             this.config = config;
             this.server = server;
-            map = new CollisionMap(config.MapBoxes);
+            maps = new CollisionMap[config.Maps.Count];
+
+            for (int index = 0; index < maps.Length; index++)
+            {
+                maps[index] = new CollisionMap(config.Maps[index].Boxes);
+
+                if (config.Maps[index].Boss && BossMap == 0 && !config.Maps[0].Boss)
+                {
+                    BossMap = index;
+                }
+            }
+
+            StartMap = config.MapIndex(server.StartMap);
+
+            if (StartMap < 0)
+            {
+                throw new ArgumentException($"start map '{server.StartMap}' is not one of the maps", nameof(server));
+            }
+
             Boss = NewBoss();
         }
 
         public int Id { get; }
+
+        /// <summary>Where a new character appears, as a place in <see cref="GameConfig.Maps"/>.</summary>
+        public int StartMap { get; }
+
+        /// <summary>The map the boss lives on: the first map marked with a boss, else the first map.</summary>
+        public int BossMap { get; }
+
         public int Tick { get; private set; }
         public int Capacity => server.PlayersPerChannel;
         public bool TestRoom => server.TestRoom;
@@ -135,20 +181,23 @@ namespace Game.Rules
         }
 
         /// <summary>
-        /// Adds a fresh player at the spawn point, or where a saved character last stood, on the ground
-        /// (T045). Returns null when the room is full or the id is taken.
+        /// Adds a fresh player at the start map's spawn point, or where a saved character last stood, on
+        /// the ground (T045). A saved X without a map is from before there were doors: the test map.
+        /// Returns null when the room is full or the id is taken.
         /// </summary>
-        public RoomPlayer? Join(int playerId, double? x = null)
+        public RoomPlayer? Join(int playerId, double? x = null, int? map = null)
         {
             if (IsFull || players.ContainsKey(playerId))
             {
                 return null;
             }
 
-            MovementState movement = x == null || double.IsNaN(x.Value) || double.IsInfinity(x.Value)
-                ? NewMovement()
-                : new MovementState(x.Value, 0d, config.Character.MaxStamina);
-            var player = new RoomPlayer(playerId, movement, new CombatState(config.Potion), new ResourceState(config.Character));
+            bool known = x != null && !double.IsNaN(x.Value) && !double.IsInfinity(x.Value);
+            int on = map != null && map.Value >= 0 && map.Value < maps.Length ? map.Value : known ? 0 : StartMap;
+            MovementState movement = known
+                ? new MovementState(x!.Value, 0d, config.Character.MaxStamina)
+                : NewMovement(on);
+            var player = new RoomPlayer(playerId, movement, new CombatState(config.Potion), new ResourceState(config.Character)) { Map = on };
             players.Add(playerId, player);
             return player;
         }
@@ -188,8 +237,9 @@ namespace Game.Rules
 
                 intents.TryGetValue(player.Id, out RoomIntent intent);
                 playerEvents.Clear();
+                bool withBoss = config.Maps[player.Map].Boss;
 
-                if (StepPlayer(player.Movement, player.Combat, player.Resources, intent, config, map, Boss, TestRoom, playerEvents))
+                if (StepPlayer(player.Movement, player.Combat, player.Resources, intent, config, maps[player.Map], withBoss ? Boss : null, TestRoom, playerEvents))
                 {
                     events.Add(new RoomEvent(RoomEventKind.Refilled, player.Id));
                 }
@@ -199,7 +249,15 @@ namespace Game.Rules
                     events.Add(new RoomEvent(RoomEventKind.Combat, player.Id, item));
                 }
 
-                HitBoss(playerEvents);
+                if (withBoss)
+                {
+                    HitBoss(playerEvents);
+                }
+
+                if (intent.Door)
+                {
+                    UseDoor(player);
+                }
             }
 
             StepBoss();
@@ -261,13 +319,18 @@ namespace Game.Rules
         {
             targets.Clear();
 
+            bool anyBoss = config.Maps[BossMap].Boss;
+
             foreach (RoomPlayer player in players.Values)
             {
-                targets.Add(new BossTarget(player.Id, player.Movement, player.Resources));
+                if (anyBoss && player.Map == BossMap)
+                {
+                    targets.Add(new BossTarget(player.Id, player.Movement, player.Resources));
+                }
             }
 
             bossEvents.Clear();
-            BossAi.Step(Boss, targets, config, map, bossEvents);
+            BossAi.Step(Boss, targets, config, maps[BossMap], bossEvents);
 
             foreach (BossEvent item in bossEvents)
             {
@@ -294,8 +357,25 @@ namespace Game.Rules
                 return;
             }
 
-            player.Reset(NewMovement(), new CombatState(config.Potion), new ResourceState(config.Character));
+            player.Reset(NewMovement(player.Map), new CombatState(config.Potion), new ResourceState(config.Character));
             events.Add(new RoomEvent(RoomEventKind.PlayerRespawned, player.Id));
+        }
+
+        /// <summary>Through the door the player stands at, if there is one; nothing happens otherwise.</summary>
+        private void UseDoor(RoomPlayer player)
+        {
+            if (player.IsDead)
+            {
+                return;
+            }
+
+            MapDoor? door = MapRules.DoorAt(config.Maps[player.Map], player.Movement.X);
+
+            if (door != null)
+            {
+                player.MoveTo(config.MapIndex(door.ToMap), door.ToX);
+                events.Add(new RoomEvent(RoomEventKind.ChangedMap, player.Id));
+            }
         }
 
         private void CountDownBoss()
@@ -310,7 +390,7 @@ namespace Game.Rules
             events.Add(new RoomEvent(RoomEventKind.BossRespawned, 0));
         }
 
-        private MovementState NewMovement() => new MovementState(server.SpawnX, 0d, config.Character.MaxStamina);
+        private MovementState NewMovement(int map) => new MovementState(config.Maps[map].SpawnX ?? server.SpawnX, 0d, config.Character.MaxStamina);
 
         private BossState NewBoss() => new BossState(config.Boss, BossAi.StartX(config.Boss, server.SpawnX));
     }

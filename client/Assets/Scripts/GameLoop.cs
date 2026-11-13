@@ -38,6 +38,10 @@ namespace DaKiem.Client
         private OnlineView onlineView;
         private bool refillPressed;
 
+        // The door button (E on a keyboard) goes out with the next tick's input.
+        private bool doorPressed;
+        private bool bossBarShown;
+
         // Practising alone, clothes change at once with F1 to F3; online they come from the bag.
         private Appearance practiceAppearance;
 
@@ -104,7 +108,7 @@ namespace DaKiem.Client
 
             hud = new HudView();
             input = new InputReader(hud);
-            view = new WorldView(config.MapBoxes);
+            view = new WorldView(config);
             character = new CharacterView();
             practiceAppearance = GearRules.Default(config);
             inventory = InventoryScreen.Create(config, (kind, target, to) => online?.ItemAction(kind, target, to));
@@ -353,7 +357,7 @@ namespace DaKiem.Client
             fx ??= new FxView(view);
             onlineView = new OnlineView(online, config, character, fx, bossView, view);
             hud.SetVisible(true);
-            hud.ShowBossBar(true);
+            hud.ShowBossBar(bossBarShown = true);
             accumulator = 0f;
 
             // Each time a guest enters, a reminder to link the account (decided 11/11/2026).
@@ -405,7 +409,7 @@ namespace DaKiem.Client
 
             if (UnityEngine.InputSystem.Keyboard.current?.eKey.wasPressedThisFrame == true && !screens.Visible && !inventory.Visible)
             {
-                PickUpNearby();
+                UseNearby();
             }
 
             if (UnityEngine.InputSystem.Keyboard.current?.bKey.wasPressedThisFrame == true && !screens.Visible)
@@ -425,13 +429,21 @@ namespace DaKiem.Client
             {
                 bool dash = input.ConsumeDash();
                 CombatIntent combat = input.ConsumeCombat();
-                online.Tick(covered ? 0d : input.MoveX, covered ? 0d : input.MoveY, dash && !covered, covered ? default : combat, refillPressed && !covered);
+                online.Tick(covered ? 0d : input.MoveX, covered ? 0d : input.MoveY, dash && !covered, covered ? default : combat, refillPressed && !covered, doorPressed && !covered);
                 refillPressed = false;
+                doorPressed = false;
                 onlineView.AfterTick();
                 accumulator -= (float)Ticks.DeltaSeconds;
             }
 
             onlineView.Show(accumulator / (float)Ticks.DeltaSeconds, frame);
+
+            // The boss and its health bar live on the test map only, not in the house.
+            if (bossBarShown != online.BossOnMap)
+            {
+                bossBarShown = online.BossOnMap;
+                hud.ShowBossBar(bossBarShown);
+            }
 
             Predictor predictor = online.Predictor;
 
@@ -523,12 +535,33 @@ namespace DaKiem.Client
             }
 
             GroundItem? near = Nearby();
+            var place = new Rect(Screen.width / 2f - unit * 2.5f, Screen.height * 0.62f, unit * 5f, unit * 0.95f);
 
-            if (near != null
-                && GUI.Button(new Rect(Screen.width / 2f - unit * 2.5f, Screen.height * 0.62f, unit * 5f, unit * 0.95f), $"Nhặt {config.Gear[near.Value.Item].Name}", button))
+            if (near != null)
             {
-                online.ItemAction(ItemActionKind.PickUp, near.Value.Id);
+                if (GUI.Button(place, $"Nhặt {config.Gear[near.Value.Item].Name}", button))
+                {
+                    online.ItemAction(ItemActionKind.PickUp, near.Value.Id);
+                }
+
+                return;
             }
+
+            MapDoor door = DoorNearby();
+
+            if (door != null && GUI.Button(place, door.Name, button))
+            {
+                doorPressed = true;
+            }
+        }
+
+        /// <summary>The door the player stands at, the same check the server makes.</summary>
+        private MapDoor DoorNearby()
+        {
+            Predictor predictor = online.Predictor;
+            return predictor == null || predictor.Resources.IsDead
+                ? null
+                : MapRules.DoorAt(config.Maps[online.Map], predictor.Movement.X);
         }
 
         private GroundItem? Nearby()
@@ -539,13 +572,18 @@ namespace DaKiem.Client
                 : ground.Reachable(online.Ground, predictor.Movement.X, predictor.Movement.Y);
         }
 
-        private void PickUpNearby()
+        /// <summary>E picks up what lies at the feet; with nothing there, it goes through the door.</summary>
+        private void UseNearby()
         {
             GroundItem? near = Nearby();
 
             if (near != null)
             {
                 online.ItemAction(ItemActionKind.PickUp, near.Value.Id);
+            }
+            else if (DoorNearby() != null)
+            {
+                doorPressed = true;
             }
         }
 
@@ -559,7 +597,7 @@ namespace DaKiem.Client
             {
                 notice = $"Bạn đã gục. Hồi sinh sau {Mathf.CeilToInt(predictor.RespawnTicksLeft / (float)Ticks.PerSecond)} giây";
             }
-            else if (online.Boss != null && online.Boss.IsDead)
+            else if (online.BossOnMap && online.Boss != null && online.Boss.IsDead)
             {
                 notice = $"Đã hạ boss! Boss xuất hiện lại sau {Mathf.CeilToInt(online.BossRespawnTicks / (float)Ticks.PerSecond)} giây";
             }

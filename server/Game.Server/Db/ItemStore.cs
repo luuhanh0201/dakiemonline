@@ -6,8 +6,11 @@ namespace Game.Server.Db;
 /// <summary>One owned item as stored: the catalog id, not its place in the catalog, so config edits do not move items.</summary>
 public sealed record StoredItem(long Id, string ItemId, int Quantity, ItemPlace Place, int Slot);
 
-/// <summary>A character's items and where it last stood, as loaded when it comes into a channel.</summary>
-public sealed record StoredBag(IReadOnlyList<StoredItem> Items, double? PositionX);
+/// <summary>
+/// A character's items and where it last stood, as loaded when it comes into a channel. MapId is the
+/// map file's id, such as map.house; null with a position means it was saved before there were maps.
+/// </summary>
+public sealed record StoredBag(IReadOnlyList<StoredItem> Items, double? PositionX, string? MapId = null);
 
 /// <summary>The items were changed by someone else since they were read, or a slot is already taken.</summary>
 public sealed class StaleItemsException : Exception
@@ -40,7 +43,8 @@ public interface IItemStore
     /// <summary>Puts a new item into a slot and returns it with its id. Throws <see cref="StaleItemsException"/> when the slot is taken.</summary>
     Task<StoredItem> AddAsync(long characterId, string action, StoredItem item, CancellationToken cancel = default);
 
-    Task SavePositionAsync(long characterId, double x, CancellationToken cancel = default);
+    /// <summary>Where the character stood when it left: the map's id and how far along.</summary>
+    Task SavePositionAsync(long characterId, string mapId, double x, CancellationToken cancel = default);
 }
 
 public sealed class PostgresItemStore : IItemStore
@@ -65,9 +69,10 @@ public sealed class PostgresItemStore : IItemStore
         await using NpgsqlTransaction transaction = await connection.BeginTransactionAsync(cancel);
         bool given;
         double? x;
+        string? mapId;
 
         // Locks the character row, so two servers loading it at once cannot both give the starter items.
-        await using (var read = new NpgsqlCommand($"select starter_given, position_x from {characters} where id = $1 for update", connection, transaction))
+        await using (var read = new NpgsqlCommand($"select starter_given, position_x, map_id from {characters} where id = $1 for update", connection, transaction))
         {
             read.Parameters.AddWithValue(characterId);
             await using NpgsqlDataReader reader = await read.ExecuteReaderAsync(cancel);
@@ -79,6 +84,7 @@ public sealed class PostgresItemStore : IItemStore
 
             given = reader.GetBoolean(0);
             x = reader.IsDBNull(1) ? null : reader.GetDouble(1);
+            mapId = reader.IsDBNull(2) ? null : reader.GetString(2);
         }
 
         if (!given)
@@ -107,7 +113,7 @@ public sealed class PostgresItemStore : IItemStore
         }
 
         await transaction.CommitAsync(cancel);
-        return new StoredBag(owned, x);
+        return new StoredBag(owned, x, mapId);
     }
 
     public async Task ApplyAsync(long characterId, string action, IReadOnlyList<(StoredItem Before, StoredItem After)> moves, IReadOnlyList<StoredItem> removed, CancellationToken cancel = default)
@@ -168,11 +174,12 @@ public sealed class PostgresItemStore : IItemStore
         return added;
     }
 
-    public async Task SavePositionAsync(long characterId, double x, CancellationToken cancel = default)
+    public async Task SavePositionAsync(long characterId, string mapId, double x, CancellationToken cancel = default)
     {
-        await using NpgsqlCommand command = source.CreateCommand($"update {characters} set position_x = $2 where id = $1");
+        await using NpgsqlCommand command = source.CreateCommand($"update {characters} set position_x = $2, map_id = $3 where id = $1");
         command.Parameters.AddWithValue(characterId);
         command.Parameters.AddWithValue(x);
+        command.Parameters.AddWithValue(mapId);
         await command.ExecuteNonQueryAsync(cancel);
     }
 
@@ -231,7 +238,7 @@ public sealed class InMemoryItemStore : IItemStore
     private readonly object gate = new();
     private readonly Dictionary<long, List<StoredItem>> owned = new();
     private readonly HashSet<long> given = new();
-    private readonly Dictionary<long, double> positions = new();
+    private readonly Dictionary<long, (string MapId, double X)> positions = new();
     private long lastId;
 
     /// <summary>Every change, as the database's item log keeps it: (character, action, item before, item after).</summary>
@@ -253,7 +260,9 @@ public sealed class InMemoryItemStore : IItemStore
                 }
             }
 
-            return Task.FromResult(new StoredBag(items.ToList(), positions.TryGetValue(characterId, out double x) ? x : null));
+            return Task.FromResult(positions.TryGetValue(characterId, out (string MapId, double X) spot)
+                ? new StoredBag(items.ToList(), spot.X, spot.MapId)
+                : new StoredBag(items.ToList(), null));
         }
     }
 
@@ -315,11 +324,11 @@ public sealed class InMemoryItemStore : IItemStore
         }
     }
 
-    public Task SavePositionAsync(long characterId, double x, CancellationToken cancel = default)
+    public Task SavePositionAsync(long characterId, string mapId, double x, CancellationToken cancel = default)
     {
         lock (gate)
         {
-            positions[characterId] = x;
+            positions[characterId] = (mapId, x);
             return Task.CompletedTask;
         }
     }

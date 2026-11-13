@@ -27,6 +27,9 @@ namespace Game.Rules.Tests
             ServerConfig server = GameConfig.ParseServer(ServerJson());
             server.PlayersPerChannel = players;
             server.TestRoom = testRoom;
+
+            // These tests are about the boss fight, so everyone starts on the test map.
+            server.StartMap = "map.test";
             return server;
         }
 

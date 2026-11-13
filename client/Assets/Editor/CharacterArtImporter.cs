@@ -22,7 +22,18 @@ namespace DaKiem.Client.Editor
             importer.textureType = TextureImporterType.Sprite;
             importer.spriteImportMode = SpriteImportMode.Single;
             importer.spritePixelsPerUnit = isWorld ? WorldPixelsPerUnit : CharacterRigScale.PixelsPerUnit;
-            importer.mipmapEnabled = false;
+
+            // The house and the door effect are drawn larger than they show, so they need smaller copies to sample.
+            bool drawnLarge = assetPath.StartsWith(WorldFolder + "House/") || assetPath.StartsWith(WorldFolder + "Door/");
+            importer.mipmapEnabled = drawnLarge;
+
+            if (drawnLarge)
+            {
+                importer.filterMode = UnityEngine.FilterMode.Trilinear;
+                importer.alphaIsTransparency = true;
+                importer.wrapMode = UnityEngine.TextureWrapMode.Clamp;
+            }
+
             importer.textureCompression = TextureImporterCompression.Uncompressed;
             // Tiny alpha masks used to keep the blade outside the face and headgear.
             importer.isReadable = assetPath.EndsWith("/head.png") || assetPath.Contains("/hat_") || assetPath.Contains("/weapon_");

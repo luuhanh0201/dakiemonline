@@ -1,6 +1,7 @@
 using System.Net.WebSockets;
 using System.Threading.Channels;
 using Game.Net;
+using Game.Rules;
 using Game.Server.Accounts;
 using Game.Server.Db;
 
@@ -168,11 +169,11 @@ public sealed class WebSocketConnection : IConnection
             }
 
             // A saved character's bag and position are loaded before it joins, so it appears where it left.
-            double? spawnX = null;
+            MapSpot? spawn = null;
 
             try
             {
-                spawnX = identity == null ? null : await server.Inventory.LoadAsync(identity.CharacterId, stop);
+                spawn = identity == null ? null : await server.Inventory.LoadAsync(identity.CharacterId, stop);
             }
             catch (Exception error) when (error is not OperationCanceledException)
             {
@@ -181,7 +182,7 @@ public sealed class WebSocketConnection : IConnection
                 return false;
             }
 
-            session = server.Hello(hello, this, identity, spawnX);
+            session = server.Hello(hello, this, identity, spawn);
 
             if (session != null)
             {

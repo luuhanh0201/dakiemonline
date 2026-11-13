@@ -16,6 +16,9 @@ namespace Game.Rules
         public int PlayersPerChannel { get; set; }
         public double SpawnX { get; set; }
 
+        /// <summary>The map id a new character first appears on; the test map unless server.json says otherwise.</summary>
+        public string StartMap { get; set; } = "map.test";
+
         /// <summary>A snapshot goes out every this many ticks.</summary>
         public int SnapshotEveryTicks { get; set; }
 

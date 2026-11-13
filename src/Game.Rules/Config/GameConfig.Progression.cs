@@ -76,7 +76,7 @@ namespace Game.Rules
         /// <summary>The same character with other stats and skill levels, as after spending TN.</summary>
         public GameConfig WithCharacter(CharacterConfig character)
         {
-            return new GameConfig(character, Movement, MapBoxes, Skills, Potion, Gear, Bag, Boss);
+            return new GameConfig(character, Movement, Maps, Skills, Potion, Gear, Bag, Boss);
         }
 
         /// <summary>Reads <see cref="ProgressionFile"/> and checks its skills against this config's.</summary>
