@@ -1,15 +1,15 @@
 fileFormatVersion: 2
-guid: 243044bb5e1f05b40856461cb0d25487
+guid: 83f67c45131fe2541b1203bb1794888b
 TextureImporter:
   internalIDToNameTable:
   - first:
-      213: 4843460787145592052
-    second: master_0
+      213: -5121195663956336382
+    second: ember_2_0
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
     mipMapMode: 0
-    enableMipMap: 0
+    enableMipMap: 1
     sRGBTexture: 1
     linearTexture: 0
     fadeOut: 0
@@ -37,7 +37,7 @@ TextureImporter:
   maxTextureSize: 2048
   textureSettings:
     serializedVersion: 2
-    filterMode: 1
+    filterMode: 2
     aniso: 1
     mipBias: -0.5
     wrapU: 1
@@ -141,13 +141,13 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: master_0
+      name: ember_2_0
       rect:
         serializedVersion: 2
         x: 1
         y: 1
-        width: 256
-        height: 373
+        width: 82
+        height: 79
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -156,8 +156,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: -1
       bones: []
-      spriteID: 4fcc8559ced673340800000000000000
-      internalID: 4843460787145592052
+      spriteID: 201ac984dabdde8b0800000000000000
+      internalID: -5121195663956336382
       vertices: []
       indices: 
       edges: []

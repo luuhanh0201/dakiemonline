@@ -91,7 +91,6 @@ namespace DaKiem.Client
             ("chest", 1.88f, 0f, 1.12f, 0f, false),
             ("lantern", 2.2f, 5.1f, 2.05f, 0f, true),
             ("sword", 3.05f, 2.15f, 0.5f, 0f, false),
-            ("master", 4.05f, 0f, 1.25f, 0f, false),
             ("table_1", 8.35f, 0f, 1.6f, 0f, false),
             ("door_open", 11.45f, 0f, 2.75f, 0.8f, false),
         };
@@ -100,6 +99,8 @@ namespace DaKiem.Client
         private readonly Sprite square;
         private readonly Camera camera;
         private readonly List<DoorLight> doors = new List<DoorLight>();
+        private MasterLife master;
+        private StoveLife stove;
         private Transform root;
         private Transform background;
         private float cameraTop;
@@ -141,6 +142,8 @@ namespace DaKiem.Client
             Map = map;
             snap = true;
             doors.Clear();
+            master = null;
+            stove = null;
             shakeLeft = 0f;
             shakeOffset = Vector3.zero;
             root = new GameObject($"Map {config.Maps[map].Id}").transform;
@@ -187,6 +190,9 @@ namespace DaKiem.Client
             {
                 door.Animate(Time.time);
             }
+
+            master?.Animate(Time.time, Time.deltaTime, feet.x);
+            stove?.Animate(Time.time, Time.deltaTime);
         }
 
         /// <summary>Moves the camera at once, for the review tools.</summary>
@@ -273,6 +279,9 @@ namespace DaKiem.Client
                 item.transform.position = new Vector3(x, hangs ? y - tall / 2f : y + tall / 2f, 0f);
             }
 
+            master = new MasterLife(root);
+            stove = new StoveLife(root);
+
             camera.transform.position = HouseCamera();
         }
 
@@ -352,6 +361,334 @@ namespace DaKiem.Client
             Texture2D texture = Texture2D.whiteTexture;
             var rect = new Rect(0f, 0f, texture.width, texture.height);
             return Sprite.Create(texture, rect, new Vector2(0.5f, 0.5f), texture.width);
+        }
+
+        /// <summary>
+        /// The old master, so the house does not feel frozen. Every movement is a drawn frame: he breathes
+        /// through five frames with his hands behind his back and now and then blinks; when the player
+        /// comes close he brings a hand round and holds it out, nodding, and puts it back when they leave.
+        /// He turns to face the player. Only the picture moves; he is not part of the rules.
+        /// </summary>
+        private sealed class MasterLife
+        {
+            private const string Folder = HouseFolder + "Master/";
+            private const float X = 4.05f;
+
+            // The frames are saved at the character's density, 240.6 px a unit (CharacterRigScale).
+            private const float PixelsPerUnit = 802f * 0.3f;
+
+            // Close enough to be greeted, and a little farther before he stops, so he does not flicker at the edge.
+            private const float NearUnits = 2.2f;
+            private const float FarUnits = 2.7f;
+            private const float TurnUnits = 0.3f;
+
+            // Breathing: in through frames 2 and 3, out through 4 and 5; how long each stays, in seconds.
+            private static readonly (int Frame, float Seconds)[] Breath =
+            {
+                (0, 0.7f), (1, 0.35f), (2, 0.6f), (3, 0.35f), (4, 0.5f),
+            };
+
+            private const int BlinkFrame = 5;
+            private const float BlinkSeconds = 0.14f;
+            private const int BreathsBetweenBlinks = 3;
+
+            // Reaching out takes four drawn steps; then he holds the hand out and nods now and then.
+            private const float ReachFrameSeconds = 0.09f;
+            private const int HoldFrame = 4;
+            private const int NodFrame = 5;
+            private const float HoldSeconds = 1.4f;
+            private const float NodSeconds = 0.45f;
+
+            private readonly Transform feet;
+            private readonly SpriteRenderer body;
+            private readonly Sprite[] idle = new Sprite[6];
+            private readonly Sprite[] invite = new Sprite[6];
+            private readonly float breathCycle;
+            private bool near;
+            private int facing = 1;
+
+            // How far the hand is out, in frames of the invite drawing: 0 behind the back, 4 held out.
+            private float reach;
+            private float holdClock;
+
+            public MasterLife(Transform parent)
+            {
+                for (int index = 0; index < idle.Length; index++)
+                {
+                    idle[index] = Resources.Load<Sprite>($"{Folder}idle_{index + 1}");
+                    invite[index] = Resources.Load<Sprite>($"{Folder}invite_{index + 1}");
+                }
+
+                foreach ((int _, float seconds) in Breath)
+                {
+                    breathCycle += seconds;
+                }
+
+                feet = new GameObject("Master").transform;
+                feet.SetParent(parent, false);
+                feet.position = new Vector3(X, 0f, 0f);
+
+                var item = new GameObject("Master body");
+                item.transform.SetParent(feet, false);
+                body = item.AddComponent<SpriteRenderer>();
+                body.sortingOrder = SmallPropOrder;
+                body.sprite = idle[0];
+
+                // Every frame shares one canvas with the feet at its bottom centre.
+                float height = idle[0].texture.height / PixelsPerUnit;
+                float scale = height / idle[0].bounds.size.y;
+                item.transform.localScale = new Vector3(scale, scale, 1f);
+                item.transform.localPosition = new Vector3(0f, height / 2f, 0f);
+            }
+
+            public void Animate(float time, float frameSeconds, float playerX)
+            {
+                float distance = playerX - X;
+                near = Mathf.Abs(distance) < (near ? FarUnits : NearUnits);
+
+                if (Mathf.Abs(distance) > TurnUnits)
+                {
+                    facing = distance > 0f ? 1 : -1;
+                }
+
+                feet.localScale = new Vector3(facing, 1f, 1f);
+                reach = Mathf.MoveTowards(reach, near ? HoldFrame : 0f, frameSeconds / ReachFrameSeconds);
+
+                if (reach <= 0f)
+                {
+                    holdClock = 0f;
+                    body.sprite = BreathFrame(time);
+                }
+                else if (reach < HoldFrame)
+                {
+                    holdClock = 0f;
+                    body.sprite = invite[Mathf.Clamp(Mathf.RoundToInt(reach), 0, HoldFrame)];
+                }
+                else
+                {
+                    holdClock = Mathf.Repeat(holdClock + frameSeconds, HoldSeconds + NodSeconds);
+                    body.sprite = invite[holdClock < HoldSeconds ? HoldFrame : NodFrame];
+                }
+            }
+
+            private Sprite BreathFrame(float time)
+            {
+                int round = (int)(time / breathCycle);
+                float at = Mathf.Repeat(time, breathCycle);
+
+                // A blink at the start of every few breaths, while he has breathed out.
+                if (round % BreathsBetweenBlinks == 0 && at < BlinkSeconds)
+                {
+                    return idle[BlinkFrame];
+                }
+
+                foreach ((int frame, float seconds) in Breath)
+                {
+                    if (at < seconds)
+                    {
+                        return idle[frame];
+                    }
+
+                    at -= seconds;
+                }
+
+                return idle[0];
+            }
+        }
+
+        /// <summary>
+        /// The little stove on the level 1 potion table: a flame that flickers through six drawn frames,
+        /// sparks that pop inside the firebox, and smoke that rises from the pot lid, swelling, swaying
+        /// and fading. The table picture has its own flame and smoke painted out. Places are measured on
+        /// table_1.png (452 x 324 px shown 1.6 units tall, centred at x 8.35); other levels will need theirs.
+        /// </summary>
+        private sealed class StoveLife
+        {
+            private const string Folder = HouseFolder + "Stove/";
+            private const int FireOrder = -27;
+            private const int SmokeOrder = -26;
+
+            // The bed of coals in the firebox, and the knob on the pot lid.
+            private static readonly Vector2 FireBase = new Vector2(7.997f, 0.648f);
+            private static readonly Vector2 Lid = new Vector2(7.99f, 1.19f);
+
+            // The firebox opening is 22 px tall above the coals, so the flame stays inside it.
+            private const float FireHeight = 0.112f;
+            private const float FireFramesPerSecond = 11f;
+
+            private const float SparkEverySecondsMin = 0.35f;
+            private const float SparkEverySecondsMax = 1.1f;
+            private const float SparkSeconds = 0.55f;
+            private const float SparkRise = 0.085f;
+            private const float SparkSize = 0.028f;
+
+            private const int SmokePuffs = 5;
+            private const float SmokeEverySeconds = 0.75f;
+            private const float SmokeSeconds = SmokePuffs * SmokeEverySeconds;
+            private const float SmokeRise = 1.15f;
+            private const float SmokeDrift = 0.18f;
+            private const float SmokeStartWidth = 0.1f;
+            private const float SmokeEndWidth = 0.34f;
+
+            private readonly SpriteRenderer fire;
+            private readonly Sprite[] fireFrames = new Sprite[6];
+            private readonly Sprite[] smokeShapes = new Sprite[4];
+            private readonly Sprite[] sparkShapes = new Sprite[3];
+            private readonly List<SpriteRenderer> puffs = new List<SpriteRenderer>();
+            private readonly List<Spark> sparks = new List<Spark>();
+            private readonly System.Random random = new System.Random(7);
+            private float firePixelScale;
+            private float nextSpark;
+
+            public StoveLife(Transform parent)
+            {
+                for (int index = 0; index < fireFrames.Length; index++)
+                {
+                    fireFrames[index] = Resources.Load<Sprite>($"{Folder}fire_{index + 1}");
+                }
+
+                for (int index = 0; index < smokeShapes.Length; index++)
+                {
+                    smokeShapes[index] = Resources.Load<Sprite>($"{Folder}smoke_{index + 1}");
+                }
+
+                for (int index = 0; index < sparkShapes.Length; index++)
+                {
+                    sparkShapes[index] = Resources.Load<Sprite>($"{Folder}ember_{index + 1}");
+                }
+
+                // One scale for every frame, so a taller frame shows as a taller flame rather than shrinking.
+                float tallest = 0f;
+
+                foreach (Sprite frame in fireFrames)
+                {
+                    tallest = Mathf.Max(tallest, frame.bounds.size.y);
+                }
+
+                firePixelScale = FireHeight / tallest;
+                fire = Make(parent, "Stove fire", FireOrder);
+
+                for (int index = 0; index < SmokePuffs; index++)
+                {
+                    SpriteRenderer puff = Make(parent, $"Stove smoke {index}", SmokeOrder);
+                    puff.sprite = smokeShapes[index % smokeShapes.Length];
+                    puffs.Add(puff);
+                }
+
+                for (int index = 0; index < 4; index++)
+                {
+                    sparks.Add(new Spark(Make(parent, $"Stove spark {index}", FireOrder + 1)));
+                }
+            }
+
+            public void Animate(float time, float frameSeconds)
+            {
+                AnimateFire(time);
+                AnimateSparks(time, frameSeconds);
+                AnimateSmoke(time);
+            }
+
+            private void AnimateFire(float time)
+            {
+                Sprite frame = fireFrames[(int)(time * FireFramesPerSecond) % fireFrames.Length];
+                fire.sprite = frame;
+
+                // Two slow waves on top of the drawn frames, so the loop never looks exactly the same.
+                float flutter = 0.06f * Mathf.Sin(time * 13.1f) + 0.04f * Mathf.Sin(time * 7.3f + 1.7f);
+                Vector2 size = frame.bounds.size;
+                fire.transform.localScale = new Vector3(firePixelScale * (1f - flutter * 0.5f), firePixelScale * (1f + flutter), 1f);
+                fire.transform.position = new Vector3(FireBase.x, FireBase.y + size.y * firePixelScale * (1f + flutter) / 2f, 0f);
+
+                float warmth = 0.9f + 0.1f * Mathf.Sin(time * 17.3f + 0.4f);
+                fire.color = new Color(1f, warmth, warmth * 0.95f, 1f);
+            }
+
+            private void AnimateSparks(float time, float frameSeconds)
+            {
+                if (time >= nextSpark)
+                {
+                    nextSpark = time + Mathf.Lerp(SparkEverySecondsMin, SparkEverySecondsMax, (float)random.NextDouble());
+                    Spark free = sparks.Find(spark => spark.Left <= 0f);
+
+                    if (free != null)
+                    {
+                        free.Left = SparkSeconds;
+                        free.Drift = ((float)random.NextDouble() - 0.5f) * 0.05f;
+                        free.Renderer.sprite = sparkShapes[random.Next(sparkShapes.Length)];
+                    }
+                }
+
+                foreach (Spark spark in sparks)
+                {
+                    spark.Left = Mathf.Max(0f, spark.Left - frameSeconds);
+                    float t = 1f - spark.Left / SparkSeconds;
+                    bool alive = spark.Left > 0f;
+                    spark.Renderer.enabled = alive;
+
+                    if (!alive)
+                    {
+                        continue;
+                    }
+
+                    Vector2 size = spark.Renderer.sprite.bounds.size;
+                    float scale = SparkSize * (1f - 0.6f * t) / size.x;
+                    spark.Renderer.transform.localScale = new Vector3(scale, scale, 1f);
+                    spark.Renderer.transform.position = new Vector3(
+                        FireBase.x + spark.Drift * t,
+                        FireBase.y + 0.03f + SparkRise * Mathf.Sin(t * Mathf.PI * 0.5f),
+                        0f);
+                    spark.Renderer.color = new Color(1f, 1f, 1f, 1f - t * t);
+                }
+            }
+
+            private void AnimateSmoke(float time)
+            {
+                for (int index = 0; index < puffs.Count; index++)
+                {
+                    SpriteRenderer puff = puffs[index];
+
+                    // Each puff starts a little after the one before and loops; a new loop picks the next shape.
+                    float age = time + index * SmokeEverySeconds;
+                    int round = (int)(age / SmokeSeconds);
+                    float t = Mathf.Repeat(age, SmokeSeconds) / SmokeSeconds;
+                    puff.sprite = smokeShapes[(index + round) % smokeShapes.Length];
+
+                    float rise = SmokeRise * (1f - (1f - t) * (1f - t));
+                    float sway = (0.02f + 0.07f * t) * Mathf.Sin((t * 2.2f + index * 0.37f) * Mathf.PI * 2f);
+                    float width = Mathf.Lerp(SmokeStartWidth, SmokeEndWidth, Mathf.Sqrt(t));
+                    float scale = width / puff.sprite.bounds.size.x;
+
+                    puff.transform.position = new Vector3(Lid.x + SmokeDrift * t + sway, Lid.y + 0.04f + rise, 0f);
+                    puff.transform.localScale = new Vector3(scale, scale, 1f);
+                    puff.transform.rotation = Quaternion.Euler(0f, 0f, 14f * Mathf.Sin((t + index * 0.21f) * Mathf.PI * 2f));
+
+                    // Fades in just above the lid and thins out as it climbs, so no puff appears or vanishes at once.
+                    float alpha = Mathf.Clamp01(t / 0.12f) * Mathf.Clamp01((1f - t) / 0.55f) * 0.85f;
+                    puff.color = new Color(1f, 1f, 1f, alpha);
+                }
+            }
+
+            private static SpriteRenderer Make(Transform parent, string name, int order)
+            {
+                var item = new GameObject(name);
+                item.transform.SetParent(parent, false);
+                var renderer = item.AddComponent<SpriteRenderer>();
+                renderer.sortingOrder = order;
+                return renderer;
+            }
+
+            private sealed class Spark
+            {
+                public Spark(SpriteRenderer renderer)
+                {
+                    Renderer = renderer;
+                    renderer.enabled = false;
+                }
+
+                public SpriteRenderer Renderer { get; }
+                public float Left { get; set; }
+                public float Drift { get; set; }
+            }
         }
 
         /// <summary>
