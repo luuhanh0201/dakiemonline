@@ -71,7 +71,7 @@ public class PacketTests
         Assert.Equal(Packet.ProtocolVersion, hello.ProtocolVersion);
         Assert.Equal(token, hello.ResumeToken);
         Assert.Equal("phien-dang-nhap_43-ky-tu", hello.LoginToken);
-        Assert.Empty(RoundTrip(new HelloMessage(7, token, "x")).ResumeToken);
+        Assert.Empty(RoundTrip(new HelloMessage((ushort)(Packet.ProtocolVersion - 1), token, "x")).ResumeToken);
     }
 
     [Fact]
@@ -275,6 +275,23 @@ public class PacketTests
         Assert.Equal(2, read.Ground.Count);
         Assert.Equal((5, 9, -1f, 2.25f), (read.Ground[1].Id, read.Ground[1].Item, read.Ground[1].X, read.Ground[1].Y));
         Assert.Empty(RoundTrip(FullSnapshot()).Ground);
+    }
+
+    [Fact]
+    public void SnapshotCarriesTheWeatherAndTheDummies()
+    {
+        SnapshotMessage source = FullSnapshot();
+        var dummies = new[] { new RemoteDummy(0, false, 70000), new RemoteDummy(1, true, 12) };
+        var village = new SnapshotMessage(source.ServerTick, source.AckSequence, source.Self, source.Boss, 0, source.Others, source.Projectiles, source.Events, source.SelfAppearance, null, 2, Weather.Rain, dummies);
+
+        SnapshotMessage read = RoundTrip(village);
+
+        Assert.Equal(2, read.Map);
+        Assert.Equal(Weather.Rain, read.Weather);
+        Assert.Equal(2, read.Dummies.Count);
+        Assert.Equal((0, false, (int)ushort.MaxValue), (read.Dummies[0].Hits, read.Dummies[0].Fallen, read.Dummies[0].TicksSinceChange));
+        Assert.Equal((1, true, 12), (read.Dummies[1].Hits, read.Dummies[1].Fallen, read.Dummies[1].TicksSinceChange));
+        Assert.Equal(Weather.Clear, RoundTrip(FullSnapshot()).Weather);
     }
 
     [Fact]

@@ -430,6 +430,7 @@ public sealed class ChannelRunner
         BossSnapshot boss = Room.Boss.Capture();
         var events = pendingEvents.ToArray();
         pendingEvents.Clear();
+        var yards = new Dictionary<int, RemoteDummy[]>();
 
         foreach (RoomPlayer player in Room.Players)
         {
@@ -475,9 +476,27 @@ public sealed class ChannelRunner
                 heard,
                 slot.Appearance,
                 lyingHere,
-                map);
+                map,
+                Room.Weather.Now,
+                YardOf(map, yards));
             slot.Connection.Send(Packet.Encode(snapshot));
         }
+    }
+
+    /// <summary>The dummies of a map as they go out, worked out once per snapshot for everyone on it.</summary>
+    private RemoteDummy[] YardOf(int map, Dictionary<int, RemoteDummy[]> done)
+    {
+        if (done.TryGetValue(map, out RemoteDummy[]? yard))
+        {
+            return yard;
+        }
+
+        IReadOnlyList<DummyState>? dummies = Room.Yard(map);
+        yard = dummies == null
+            ? Array.Empty<RemoteDummy>()
+            : dummies.Select(dummy => new RemoteDummy(dummy.Hits, dummy.Fallen, dummy.TicksSinceChange)).ToArray();
+        done[map] = yard;
+        return yard;
     }
 
     /// <summary>

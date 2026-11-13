@@ -45,6 +45,12 @@ namespace Game.Net
         public BossState? Boss { get; set; }
 
         /// <summary>
+        /// Where there is no boss, what blows aim at while predicting, such as the nearest standing dummy;
+        /// the client sets it from the latest snapshot.
+        /// </summary>
+        public CombatTarget? Aim { get; set; }
+
+        /// <summary>
         /// The map the player is on, as its place in GameConfig.Maps. The server moves players between maps;
         /// the client sets this from each snapshot before reconciling, so replayed inputs hit the right walls.
         /// </summary>
@@ -111,7 +117,8 @@ namespace Game.Net
 
         private void Step(InputMessage input, List<CombatEvent> output)
         {
-            Room.StepPlayer(Movement, Combat, Resources, input.ToIntent(), config, map, Boss, testRoom, output);
+            CombatTarget? target = Boss != null ? (Boss.IsDead ? (CombatTarget?)null : BossAi.TargetOf(Boss, config.Boss)) : Aim;
+            Room.StepPlayerAt(Movement, Combat, Resources, input.ToIntent(), config, map, target, testRoom, output);
         }
 
         private void Restore(PlayerSnapshot snapshot)

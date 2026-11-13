@@ -12,6 +12,7 @@ namespace Game.Rules
         public const string MovementFile = "movement.json";
         public const string MapFile = "map.test.json";
         public const string HouseFile = "map.house.json";
+        public const string VillageFile = "map.village.json";
         public const string SkillsFile = "skills.thuy.json";
         public const string ItemsFile = "items.json";
         public const string BossFile = "boss.json";
@@ -73,6 +74,7 @@ namespace Game.Rules
             MovementFile,
             MapFile,
             HouseFile,
+            VillageFile,
             SkillsFile,
             ItemsFile,
             BossFile,
@@ -149,6 +151,8 @@ namespace Game.Rules
                 PlayersPerChannel = PositiveInt(root, "playersPerChannel"),
                 SpawnX = root.Double("spawnX"),
                 StartMap = root.String("startMap"),
+                WeatherMinSec = root.Positive("weatherMinSec"),
+                WeatherMaxSec = root.Positive("weatherMaxSec"),
                 SnapshotEveryTicks = PositiveInt(root, "snapshotEveryTicks"),
                 ReconnectHoldSec = root.NotNegative("reconnectHoldSec"),
                 MaxQueuedInputs = PositiveInt(root, "maxQueuedInputs"),
@@ -440,7 +444,7 @@ namespace Game.Rules
             var maps = new List<MapConfig>();
             var roots = new List<ConfigObject>();
 
-            foreach (string file in new[] { MapFile, HouseFile })
+            foreach (string file in new[] { MapFile, HouseFile, VillageFile })
             {
                 ConfigObject root = Open(files, file);
                 MapConfig map = ParseMap(root);
@@ -489,8 +493,52 @@ namespace Game.Rules
             map.Shared = root.Boolean("shared");
             map.Boxes = ParseBoxes(root);
             map.Doors = ParseDoors(root);
+            map.Training = root.Has("training") ? ParseTraining(root.Object("training")) : null;
             root.RejectUnknownFields();
             return map;
+        }
+
+        private static TrainingConfig ParseTraining(ConfigObject item)
+        {
+            var training = new TrainingConfig
+            {
+                MaxHp = PositiveInt(item, "maxHp"),
+                DamagePerHit = PositiveInt(item, "damagePerHit"),
+                RespawnSec = item.Positive("respawnSec"),
+                Width = item.Positive("width"),
+                Height = item.Positive("height"),
+            };
+
+            var ids = new HashSet<string>();
+            var dummies = new List<MapDummy>();
+
+            foreach (ConfigObject entry in item.Array("dummies"))
+            {
+                var dummy = new MapDummy { Id = ReadId(entry), X = entry.Double("x") };
+
+                if (!ids.Add(dummy.Id))
+                {
+                    throw entry.Fail("id", $"duplicate id '{dummy.Id}'");
+                }
+
+                entry.RejectUnknownFields();
+                dummies.Add(dummy);
+            }
+
+            if (dummies.Count == 0 || dummies.Count > byte.MaxValue)
+            {
+                throw item.Fail("dummies", "needs 1 to 255 dummies");
+            }
+
+            // Snapshots carry a dummy's blows in one byte.
+            if (training.HitsToFall > byte.MaxValue)
+            {
+                throw item.Fail("damagePerHit", "a dummy must fall within 255 blows");
+            }
+
+            training.Dummies = dummies;
+            item.RejectUnknownFields();
+            return training;
         }
 
         private static IReadOnlyList<MapDoor> ParseDoors(ConfigObject root)

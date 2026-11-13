@@ -12,6 +12,6 @@
     { "id": "wall.right", "minX": 14.4, "minY": 0, "maxX": 16, "maxY": 20, "oneWay": false }
   ],
   "doors": [
-    { "id": "door.yard", "name": "Ra ngoài", "x": 10.8, "reach": 0.8, "toMap": "map.test", "toX": 8.3, "walk": false }
+    { "id": "door.yard", "name": "Ra ngoài", "x": 10.8, "reach": 0.8, "toMap": "map.village", "toX": 2.7, "walk": false }
   ]
 }

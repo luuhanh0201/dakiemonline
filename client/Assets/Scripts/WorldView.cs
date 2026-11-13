@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using System.Linq;
+using Game.Net;
 using Game.Rules;
 using UnityEngine;
 
@@ -14,6 +16,7 @@ namespace DaKiem.Client
         private const string ArtFolder = "World/";
         private const string HouseFolder = "World/House/";
         private const string HouseMapId = "map.house";
+        private const string VillageMapId = "map.village";
         private const float ViewWidth = 12f;
         private const float MapWidth = 30f;
         private const float LookAhead = 0.1f * ViewWidth;
@@ -101,6 +104,9 @@ namespace DaKiem.Client
         private readonly List<DoorLight> doors = new List<DoorLight>();
         private MasterLife master;
         private StoveLife stove;
+        private VillageScene village;
+        private Weather villageWeather;
+        private IReadOnlyList<RemoteDummy> villageDummies = System.Array.Empty<RemoteDummy>();
         private Transform root;
         private Transform background;
         private float cameraTop;
@@ -144,6 +150,7 @@ namespace DaKiem.Client
             doors.Clear();
             master = null;
             stove = null;
+            village = null;
             shakeLeft = 0f;
             shakeOffset = Vector3.zero;
             root = new GameObject($"Map {config.Maps[map].Id}").transform;
@@ -151,6 +158,10 @@ namespace DaKiem.Client
             if (config.Maps[map].Id == HouseMapId)
             {
                 BuildHouse();
+            }
+            else if (config.Maps[map].Id == VillageMapId)
+            {
+                BuildVillage(config.Maps[map]);
             }
             else
             {
@@ -205,6 +216,14 @@ namespace DaKiem.Client
 
             master?.Animate(Time.time, Time.deltaTime, feet.x);
             stove?.Animate(Time.time, Time.deltaTime);
+            village?.Animate(Time.time, Time.deltaTime, feet.x, villageWeather, villageDummies);
+        }
+
+        /// <summary>The channel's weather and the dummies of the village, as the server last sent them.</summary>
+        public void SetVillage(Weather weather, IReadOnlyList<RemoteDummy> dummies)
+        {
+            villageWeather = weather;
+            villageDummies = dummies ?? System.Array.Empty<RemoteDummy>();
         }
 
         /// <summary>Moves the camera at once, for the review tools.</summary>
@@ -264,6 +283,27 @@ namespace DaKiem.Client
                     DrawGround(box);
                 }
             }
+        }
+
+        private void BuildVillage(MapConfig map)
+        {
+            house = false;
+            mapWidth = (float)(map.Boxes.First(box => box.Id == "ground").MaxX - 1d);
+            camera.backgroundColor = SkyColor;
+            camera.orthographicSize = ViewWidth / camera.aspect / 2f;
+            camera.transform.position = new Vector3(ViewWidth / 2f, camera.orthographicSize - GroundMargin, -10f);
+            cameraTop = camera.transform.position.y + camera.orthographicSize;
+            background = null;
+
+            foreach (MapBox box in map.Boxes)
+            {
+                if (box.Id == "ground")
+                {
+                    DrawGround(box);
+                }
+            }
+
+            village = new VillageScene(root, camera, map);
         }
 
         private void BuildHouse()

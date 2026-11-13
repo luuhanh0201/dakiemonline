@@ -43,6 +43,14 @@ namespace DaKiem.Client
 
         // The door button (E on a keyboard) goes out with the next tick's input.
         private bool doorPressed;
+
+        // The loading screen covers entering the game and every trip through a door (see LoadingScreen).
+        private LoadingScreen loading;
+        private bool entering;
+        private bool doorWanted;
+        private int doorFromMap = -1;
+        private float doorGiveUpAt;
+        private const float DoorGiveUpSeconds = 3f;
         private bool bossBarShown;
 
         // Practising alone, clothes change at once with F1 to F3; online they come from the bag.
@@ -110,6 +118,7 @@ namespace DaKiem.Client
             }
 
             hud = new HudView();
+            loading = LoadingScreen.Create();
             input = new InputReader(hud);
             view = new WorldView(config);
             character = new CharacterView();
@@ -179,6 +188,7 @@ namespace DaKiem.Client
             GameFrame.Active = online != null || fight != null;
             GameFrame.Apply(Camera.main);
             hud?.FitScreen();
+            FpsOverlay.Covered = loading != null && loading.Visible;
 
             if (online != null)
             {
@@ -365,6 +375,10 @@ namespace DaKiem.Client
             hud.SetVisible(true);
             hud.ShowBossBar(bossBarShown = true);
             accumulator = 0f;
+            entering = true;
+            doorWanted = false;
+            doorFromMap = -1;
+            loading.Begin("Đang kết nối máy chủ...", 0.15f, 1.2f);
 
             // Each time a guest enters, a reminder to link the account (decided 11/11/2026).
             if (account != null && account.IsGuest)
@@ -385,6 +399,10 @@ namespace DaKiem.Client
             onlineView = null;
             hud.ShowBossBar(false);
             hud.SetVisible(false);
+            loading.HideNow();
+            entering = false;
+            doorWanted = false;
+            doorFromMap = -1;
             screens.ShowAfterGame(rejected, reason);
         }
 
@@ -429,13 +447,14 @@ namespace DaKiem.Client
             accumulator += frame;
 
             // While an account screen or the bag is over the game, touches belong to it and the character stands still.
-            bool covered = screens.Visible || inventory.Visible;
+            FollowLoading();
+            bool covered = screens.Visible || inventory.Visible || loading.Visible;
 
             while (accumulator >= Ticks.DeltaSeconds)
             {
                 bool dash = input.ConsumeDash();
                 CombatIntent combat = input.ConsumeCombat();
-                online.Tick(covered ? 0d : input.MoveX, covered ? 0d : input.MoveY, dash && !covered, covered ? default : combat, refillPressed && !covered, doorPressed && !covered);
+                online.Tick(covered ? 0d : input.MoveX, covered ? 0d : input.MoveY, dash && !covered, covered ? default : combat, refillPressed && !covered, doorPressed && !screens.Visible && !inventory.Visible);
                 refillPressed = false;
                 doorPressed = false;
                 onlineView.AfterTick();
@@ -470,7 +489,7 @@ namespace DaKiem.Client
         private void DrawOnline(GUIStyle style)
         {
             // OnGUI draws above every canvas, so nothing of it may show while an account screen or the bag is up.
-            if (screens.Visible || inventory.Visible)
+            if (screens.Visible || inventory.Visible || loading.Visible)
             {
                 return;
             }
@@ -570,7 +589,58 @@ namespace DaKiem.Client
 
             if (GUI.Button(onDoor, door.Name, button))
             {
+                GoThrough(door);
+            }
+        }
+
+        /// <summary>The loading screen covers the game first; the door is used once it hides the world.</summary>
+        private void GoThrough(MapDoor door)
+        {
+            if (doorWanted || doorFromMap >= 0)
+            {
+                return;
+            }
+
+            doorWanted = true;
+            loading.Begin(door.Name + "...", 0.3f, 0.7f);
+        }
+
+        /// <summary>
+        /// Moves the loading screen along: entering waits for the connection, the character, the bag and the
+        /// map; a door waits for the screen to cover the game, then for the server to move the player.
+        /// </summary>
+        private void FollowLoading()
+        {
+            if (entering)
+            {
+                if (online.Status != OnlineStatus.Playing)
+                {
+                    loading.Report("Đang kết nối máy chủ...", 0.25f);
+                }
+                else if (online.Inventory == null || !online.HasSnapshot)
+                {
+                    loading.Report("Đang nạp nhân vật và túi đồ...", 0.6f);
+                }
+                else
+                {
+                    loading.Report("Đang dựng bản đồ...", 0.85f);
+                    loading.Finish("Sẵn sàng");
+                    entering = false;
+                }
+            }
+
+            if (doorWanted && loading.Covering)
+            {
+                doorWanted = false;
                 doorPressed = true;
+                doorFromMap = online.Map;
+                doorGiveUpAt = Time.unscaledTime + DoorGiveUpSeconds;
+                loading.Report("Đang sang map mới...", 0.6f);
+            }
+            else if (doorFromMap >= 0 && (online.Map != doorFromMap || Time.unscaledTime > doorGiveUpAt))
+            {
+                doorFromMap = -1;
+                loading.Finish("Đã tới nơi");
             }
         }
 
@@ -606,7 +676,7 @@ namespace DaKiem.Client
             }
             else if (DoorNearby() != null)
             {
-                doorPressed = true;
+                GoThrough(DoorNearby());
             }
         }
 

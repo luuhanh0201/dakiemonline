@@ -19,6 +19,11 @@ namespace Game.Rules
         /// <summary>The map id a new character first appears on; the test map unless server.json says otherwise.</summary>
         public string StartMap { get; set; } = "map.test";
 
+        /// <summary>The weather of a channel holds at least this long, and at most WeatherMaxSec, before it changes.</summary>
+        public double WeatherMinSec { get; set; } = 480d;
+
+        public double WeatherMaxSec { get; set; } = 900d;
+
         /// <summary>A snapshot goes out every this many ticks.</summary>
         public int SnapshotEveryTicks { get; set; }
 

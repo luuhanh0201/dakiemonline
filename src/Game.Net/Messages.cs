@@ -467,10 +467,21 @@ namespace Game.Net
             IReadOnlyList<NetEvent> events,
             Appearance selfAppearance = default,
             IReadOnlyList<GroundItem>? ground = null,
-            int map = 0)
+            int map = 0,
+            Weather weather = Weather.Clear,
+            IReadOnlyList<RemoteDummy>? dummies = null)
         {
             ground ??= Array.Empty<GroundItem>();
+            dummies ??= Array.Empty<RemoteDummy>();
+
+            if (dummies.Count > byte.MaxValue)
+            {
+                throw new ArgumentException("at most 255 dummies");
+            }
+
             Map = map;
+            Weather = weather;
+            Dummies = dummies;
 
             if (others.Count > byte.MaxValue || projectiles.Count > byte.MaxValue || events.Count > byte.MaxValue || ground.Count > byte.MaxValue)
             {
@@ -511,6 +522,12 @@ namespace Game.Net
 
         /// <summary>Which map this player is on now; it changes when they go through a door.</summary>
         public int Map { get; }
+
+        /// <summary>The channel's weather, the same on every map.</summary>
+        public Weather Weather { get; }
+
+        /// <summary>The straw dummies of this player's map, in the map file's order; empty where there are none.</summary>
+        public IReadOnlyList<RemoteDummy> Dummies { get; }
 
         internal override void Write(PacketWriter writer)
         {
@@ -570,6 +587,16 @@ namespace Game.Net
                 writer.Byte(checked((byte)item.Item));
                 writer.Single(item.X);
                 writer.Single(item.Y);
+            }
+
+            writer.Byte((byte)Weather);
+            writer.Byte((byte)Dummies.Count);
+
+            foreach (RemoteDummy dummy in Dummies)
+            {
+                writer.Byte((byte)Math.Min(dummy.Hits, byte.MaxValue));
+                writer.Bool(dummy.Fallen);
+                writer.UInt16((ushort)Math.Min(dummy.TicksSinceChange, ushort.MaxValue));
             }
         }
 
@@ -634,7 +661,15 @@ namespace Game.Net
                 ground[index] = new GroundItem(reader.Int32(), reader.Byte(), reader.Single(), reader.Single());
             }
 
-            return new SnapshotMessage(tick, ack, self, boss, bossRespawn, others, projectiles, events, selfAppearance, ground, map);
+            Weather weather = Known<Weather>(reader.Byte());
+            var dummies = new RemoteDummy[reader.Byte()];
+
+            for (int index = 0; index < dummies.Length; index++)
+            {
+                dummies[index] = new RemoteDummy(reader.Byte(), reader.Bool(), reader.UInt16());
+            }
+
+            return new SnapshotMessage(tick, ack, self, boss, bossRespawn, others, projectiles, events, selfAppearance, ground, map, weather, dummies);
         }
 
         /// <summary>One byte per shown slot. The client checks the items against its own catalog.</summary>
@@ -830,6 +865,23 @@ namespace Game.Net
 
         public float X { get; }
         public float Y { get; }
+    }
+
+    /// <summary>A straw dummy as the server last saw it, for drawing; dummies travel in the map file's order.</summary>
+    public readonly struct RemoteDummy
+    {
+        public RemoteDummy(int hits, bool fallen, int ticksSinceChange)
+        {
+            Hits = hits;
+            Fallen = fallen;
+            TicksSinceChange = ticksSinceChange;
+        }
+
+        public int Hits { get; }
+        public bool Fallen { get; }
+
+        /// <summary>Ticks since it was last hit, fell or stood up; capped, so long waits read as long ago.</summary>
+        public int TicksSinceChange { get; }
     }
 
     /// <summary>Client → server: quitting on purpose, so the server frees the place at once.</summary>

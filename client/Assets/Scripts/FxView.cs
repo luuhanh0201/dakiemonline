@@ -57,7 +57,7 @@ namespace DaKiem.Client
         /// view per screen shows the boss's red zone. The boss can be null while it is away.
         /// </summary>
         public void Show(object owner, MovementState player, CombatState combat, BossState boss, BossConfig bossConfig,
-            IReadOnlyList<CombatEvent> events, bool hurt, bool showWarning, float frameSeconds = -1f)
+            IReadOnlyList<CombatEvent> events, bool hurt, bool showWarning, float frameSeconds = -1f, CombatBox? dummy = null)
         {
             if (owner != lastOwner)
             {
@@ -93,7 +93,11 @@ namespace DaKiem.Client
             StartSlash(player, combat);
             foreach (CombatEvent item in events)
             {
-                if (item.Kind == CombatEventKind.SkillHit && boss != null) StartSpark(player, combat, boss, bossConfig, item);
+                if (item.Kind == CombatEventKind.SkillHit && boss != null)
+                    StartSpark(player, combat, (float)boss.X, (float)bossConfig.Width, (float)bossConfig.Height, item);
+                else if (item.Kind == CombatEventKind.SkillHit && dummy.HasValue)
+                    StartSpark(player, combat, (float)((dummy.Value.MinX + dummy.Value.MaxX) / 2d),
+                        (float)(dummy.Value.MaxX - dummy.Value.MinX), (float)(dummy.Value.MaxY - dummy.Value.MinY), item);
                 else if ((item.Kind == CombatEventKind.SelfHealed || item.Kind == CombatEventKind.PotionUsed) && drawnWater.HasHeal)
                     drawnWater.PlayHeal(new Vector2((float)player.X, (float)player.Y));
                 else if (item.Kind == CombatEventKind.SelfHealed || item.Kind == CombatEventKind.PotionUsed)
@@ -209,11 +213,12 @@ namespace DaKiem.Client
             }
         }
 
-        private void StartSpark(MovementState player, CombatState combat, BossState bossState, BossConfig boss, in CombatEvent hit)
+        /// <summary>The blow's splash on the near side of what it hit: the boss or a straw dummy.</summary>
+        private void StartSpark(MovementState player, CombatState combat, float targetX, float width, float height, in CombatEvent hit)
         {
-            int way = bossState.X >= player.X ? -1 : 1;
-            var place = new Vector2((float)bossState.X + way * (float)boss.Width * 0.4f,
-                (float)boss.Height * 0.4f + hit.HitIndex % 2 * 0.15f);
+            int way = targetX >= player.X ? -1 : 1;
+            var place = new Vector2(targetX + way * width * 0.4f,
+                height * 0.4f + hit.HitIndex % 2 * 0.15f);
             bool heavy = hit.Slot == SkillSlot.Ultimate && hit.HitIndex == 2
                 || hit.Slot == SkillSlot.Attack && combat.ComboStep == 2;
             if (packageSlash.Enabled)

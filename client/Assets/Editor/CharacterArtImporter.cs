@@ -10,7 +10,7 @@ namespace DaKiem.Client.Editor
         private const float WorldPixelsPerUnit = 200f;
 
         /// <summary>Raised when these rules change, so Unity imports the art again with them.</summary>
-        public override uint GetVersion() => 3;
+        public override uint GetVersion() => 4;
 
         private void OnPreprocessTexture()
         {
@@ -29,8 +29,11 @@ namespace DaKiem.Client.Editor
             // The house and the door effect are drawn larger than they show, so they need smaller copies to sample.
             // The old master is the exception: he is saved at the character's own density and, like the
             // character, drawn without them, so both look equally sharp side by side.
-            bool drawnLarge = (assetPath.StartsWith(WorldFolder + "House/") && !assetPath.Contains("/House/Master/"))
-                || assetPath.StartsWith(WorldFolder + "Door/");
+            // The village scenery is the same; its shopkeepers and dummies are like the master.
+            bool frameArt = assetPath.Contains("/House/Master/") || assetPath.Contains("/Village/Npc/") || assetPath.Contains("/Village/Dummy/");
+            bool drawnLarge = !frameArt && (assetPath.StartsWith(WorldFolder + "House/")
+                || assetPath.StartsWith(WorldFolder + "Door/")
+                || assetPath.StartsWith(WorldFolder + "Village/"));
             importer.mipmapEnabled = drawnLarge;
 
             if (drawnLarge)

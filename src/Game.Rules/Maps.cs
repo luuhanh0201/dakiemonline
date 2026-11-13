@@ -47,6 +47,9 @@ namespace Game.Rules
         public bool Shared { get; set; }
 
         public IReadOnlyList<MapDoor> Doors { get; set; } = Array.Empty<MapDoor>();
+
+        /// <summary>The straw dummies of a training yard on this map; null where there is none.</summary>
+        public TrainingConfig? Training { get; set; }
     }
 
     /// <summary>Where a character is: which map, as its place in <see cref="GameConfig.Maps"/>, and how far along.</summary>
@@ -80,6 +83,33 @@ namespace Game.Rules
             }
 
             return nearest;
+        }
+
+        /// <summary>
+        /// Whether a player can walk onto the map: it is where new characters start, or a door leads to it.
+        /// A map nothing leads to, such as the hidden test map, is not somewhere to come back to.
+        /// </summary>
+        public static bool Reachable(GameConfig config, ServerConfig server, int map)
+        {
+            string id = config.Maps[map].Id;
+
+            if (id == server.StartMap)
+            {
+                return true;
+            }
+
+            foreach (MapConfig from in config.Maps)
+            {
+                foreach (MapDoor door in from.Doors)
+                {
+                    if (door.ToMap == id && from.Id != id)
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
         }
 
         /// <summary>Whether two players on <paramref name="map"/> see each other and each other's things.</summary>

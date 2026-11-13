@@ -118,6 +118,7 @@ namespace Game.Rules
         private readonly GameConfig config;
         private readonly ServerConfig server;
         private readonly CollisionMap[] maps;
+        private readonly List<DummyState>?[] yards;
         private readonly SortedDictionary<int, RoomPlayer> players = new SortedDictionary<int, RoomPlayer>();
         private readonly List<RoomEvent> events = new List<RoomEvent>();
         private readonly List<CombatEvent> playerEvents = new List<CombatEvent>();
@@ -130,10 +131,13 @@ namespace Game.Rules
             this.config = config;
             this.server = server;
             maps = new CollisionMap[config.Maps.Count];
+            yards = new List<DummyState>?[config.Maps.Count];
 
             for (int index = 0; index < maps.Length; index++)
             {
                 maps[index] = new CollisionMap(config.Maps[index].Boxes);
+                TrainingConfig? training = config.Maps[index].Training;
+                yards[index] = training == null ? null : TrainingRules.NewYard(training);
 
                 if (config.Maps[index].Boss && BossMap == 0 && !config.Maps[0].Boss)
                 {
@@ -149,9 +153,16 @@ namespace Game.Rules
             }
 
             Boss = NewBoss();
+            Weather = new WeatherState(id, server.WeatherMinSec, server.WeatherMaxSec);
         }
 
         public int Id { get; }
+
+        /// <summary>The channel's weather, the same on every map of it.</summary>
+        public WeatherState Weather { get; }
+
+        /// <summary>The straw dummies of a map in file order; null for a map without a training yard.</summary>
+        public IReadOnlyList<DummyState>? Yard(int map) => map >= 0 && map < yards.Length ? yards[map] : null;
 
         /// <summary>Where a new character appears, as a place in <see cref="GameConfig.Maps"/>.</summary>
         public int StartMap { get; }
@@ -226,6 +237,18 @@ namespace Game.Rules
             Tick++;
             events.Clear();
             CountDownBoss();
+            Weather.Step();
+
+            foreach (List<DummyState>? yard in yards)
+            {
+                if (yard != null)
+                {
+                    foreach (DummyState dummy in yard)
+                    {
+                        TrainingRules.Step(dummy);
+                    }
+                }
+            }
 
             foreach (RoomPlayer player in players.Values)
             {
@@ -238,8 +261,14 @@ namespace Game.Rules
                 intents.TryGetValue(player.Id, out RoomIntent intent);
                 playerEvents.Clear();
                 bool withBoss = config.Maps[player.Map].Boss;
+                List<DummyState>? yard = yards[player.Map];
+                TrainingConfig? training = config.Maps[player.Map].Training;
+                int dummy = yard == null ? -1 : TrainingRules.Nearest(yard, player.Movement.X);
+                CombatTarget? target = withBoss
+                    ? (Boss.IsDead ? (CombatTarget?)null : BossAi.TargetOf(Boss, config.Boss))
+                    : dummy >= 0 ? new CombatTarget(TrainingRules.Box(training!, yard![dummy].X), 0m) : (CombatTarget?)null;
 
-                if (StepPlayer(player.Movement, player.Combat, player.Resources, intent, config, maps[player.Map], withBoss ? Boss : null, TestRoom, playerEvents))
+                if (StepPlayerAt(player.Movement, player.Combat, player.Resources, intent, config, maps[player.Map], target, TestRoom, playerEvents))
                 {
                     events.Add(new RoomEvent(RoomEventKind.Refilled, player.Id));
                 }
@@ -252,6 +281,10 @@ namespace Game.Rules
                 if (withBoss)
                 {
                     HitBoss(playerEvents);
+                }
+                else if (dummy >= 0)
+                {
+                    HitDummy(yard![dummy], training!, playerEvents);
                 }
 
                 UseDoor(player, intent.Door);
@@ -276,6 +309,22 @@ namespace Game.Rules
             bool testRoom,
             List<CombatEvent> events)
         {
+            CombatTarget? target = boss == null || boss.IsDead ? (CombatTarget?)null : BossAi.TargetOf(boss, config.Boss);
+            return StepPlayerAt(movement, combat, resources, intent, config, map, target, testRoom, events);
+        }
+
+        /// <summary>The same tick, aimed at whatever the player's blows can hit on their map: the boss or a dummy.</summary>
+        public static bool StepPlayerAt(
+            MovementState movement,
+            CombatState combat,
+            ResourceState resources,
+            in RoomIntent intent,
+            GameConfig config,
+            CollisionMap map,
+            CombatTarget? target,
+            bool testRoom,
+            List<CombatEvent> events)
+        {
             if (resources.IsDead)
             {
                 return false;
@@ -291,9 +340,20 @@ namespace Game.Rules
                 combat.PotionsLeft = config.Potion.Charges;
             }
 
-            CombatTarget? target = boss == null || boss.IsDead ? (CombatTarget?)null : BossAi.TargetOf(boss, config.Boss);
             Combat.Step(combat, movement, resources, intent.Move, intent.Combat, config, map, target, events);
             return refill;
+        }
+
+        /// <summary>Every blow that landed counts on the dummy it was aimed at, until it falls.</summary>
+        private static void HitDummy(DummyState dummy, TrainingConfig training, List<CombatEvent> hits)
+        {
+            foreach (CombatEvent hit in hits)
+            {
+                if (hit.Kind == CombatEventKind.SkillHit)
+                {
+                    TrainingRules.Hit(dummy, training);
+                }
+            }
         }
 
         private void HitBoss(List<CombatEvent> hits)

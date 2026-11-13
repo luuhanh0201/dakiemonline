@@ -64,9 +64,12 @@ namespace DaKiem.Client
         /// <summary>Set while the login screens are up: the count would sit on the logo.</summary>
         public static bool Hidden { get; set; }
 
+        /// <summary>True while the loading screen is up; the counter waits behind it.</summary>
+        public static bool Covered { get; set; }
+
         private void OnGUI()
         {
-            if (Hidden)
+            if (Hidden || Covered)
             {
                 return;
             }

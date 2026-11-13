@@ -136,6 +136,13 @@ public sealed class GameServer
             }
 
             occupancy[runner.Id]++;
+
+            // A spot saved on a map nothing leads to any more, such as the hidden test map, starts the character over.
+            if (spawn != null && !MapRules.Reachable(Config, Server, spawn.Value.Map))
+            {
+                spawn = null;
+            }
+
             runner.Join(session, connection, spawn);
             return session;
         }

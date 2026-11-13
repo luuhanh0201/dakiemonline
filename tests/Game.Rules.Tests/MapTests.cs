@@ -20,7 +20,8 @@ namespace Game.Rules.Tests
         private int House => config.MapIndex("map.house");
         private MapConfig HouseMap => config.Maps[House];
         private MapDoor HouseDoor => HouseMap.Doors[0];
-        private MapDoor YardDoor => config.Maps[Test].Doors[0];
+        private int Village => config.MapIndex("map.village");
+        private MapDoor YardDoor => config.Maps[Village].Doors[0];
 
         private static ServerConfig Server()
         {
@@ -60,9 +61,9 @@ namespace Game.Rules.Tests
         [Fact]
         public void EachDoorLeadsToTheOtherMapNextToItsDoor()
         {
-            Assert.Equal("map.test", HouseDoor.ToMap);
+            Assert.Equal("map.village", HouseDoor.ToMap);
             Assert.Equal("map.house", YardDoor.ToMap);
-            Assert.NotNull(MapRules.DoorAt(config.Maps[Test], HouseDoor.ToX));
+            Assert.NotNull(MapRules.DoorAt(config.Maps[Village], HouseDoor.ToX));
             Assert.NotNull(MapRules.DoorAt(HouseMap, YardDoor.ToX));
         }
 
@@ -70,7 +71,7 @@ namespace Game.Rules.Tests
         public void ADoorToAMapThatDoesNotExistIsRefused()
         {
             Dictionary<string, string> files = TestConfig.Files();
-            files[GameConfig.HouseFile] = files[GameConfig.HouseFile].Replace("\"toMap\": \"map.test\"", "\"toMap\": \"map.cave\"");
+            files[GameConfig.HouseFile] = files[GameConfig.HouseFile].Replace("\"toMap\": \"map.village\"", "\"toMap\": \"map.cave\"");
 
             var error = Assert.Throws<InvalidConfigException>(() => GameConfig.Parse(files));
 
@@ -126,7 +127,7 @@ namespace Game.Rules.Tests
 
             Run(room, 1, Door, 1);
 
-            Assert.Equal(Test, player.Map);
+            Assert.Equal(Village, player.Map);
             Assert.Equal(HouseDoor.ToX, player.Movement.X, Precision);
             Assert.Contains(room.Events, item => item.Kind == RoomEventKind.ChangedMap && item.PlayerId == 1);
 
@@ -189,7 +190,8 @@ namespace Game.Rules.Tests
         public void WalkingIntoADoorAtTheEdgeOfTheMapGoesThroughWithoutTheButton()
         {
             Dictionary<string, string> files = TestConfig.Files();
-            files[GameConfig.HouseFile] = files[GameConfig.HouseFile].Replace("\"toX\": 8.3, \"walk\": false", "\"toX\": 8.3, \"walk\": true");
+            files[GameConfig.HouseFile] = files[GameConfig.HouseFile].Replace("\"toX\": 2.7, \"walk\": false", "\"toX\": 2.7, \"walk\": true");
+            files[GameConfig.VillageFile] = files[GameConfig.VillageFile].Replace("\"toX\": 10.4", "\"toX\": 9.6");
             files[GameConfig.MapFile] = files[GameConfig.MapFile].Replace("\"toX\": 10.4", "\"toX\": 9.6");
             GameConfig edge = GameConfig.Parse(files);
             var room = new Room(1, edge, Server());
@@ -200,7 +202,7 @@ namespace Game.Rules.Tests
             Run(room, 1, Right, Ticks.PerSecond / 2);
 
             Assert.True(door.Walk);
-            Assert.Equal(Test, player.Map);
+            Assert.Equal(Village, player.Map);
             Assert.InRange(player.Movement.X, door.ToX, door.ToX + 2d);
         }
 
@@ -208,7 +210,7 @@ namespace Game.Rules.Tests
         public void ADoorThatLandsInsideAWalkThroughDoorIsRefused()
         {
             Dictionary<string, string> files = TestConfig.Files();
-            files[GameConfig.MapFile] = files[GameConfig.MapFile].Replace("\"toX\": 10.4, \"walk\": false", "\"toX\": 10.4, \"walk\": true");
+            files[GameConfig.VillageFile] = files[GameConfig.VillageFile].Replace("\"toX\": 10.4, \"walk\": false", "\"toX\": 10.4, \"walk\": true");
 
             var error = Assert.Throws<InvalidConfigException>(() => GameConfig.Parse(files));
 

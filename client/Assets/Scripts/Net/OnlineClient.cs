@@ -93,6 +93,15 @@ namespace DaKiem.Client.Net
         /// <summary>The bag as the server last sent it; null until it arrives after joining.</summary>
         public InventoryMessage Inventory { get; private set; }
 
+        /// <summary>A snapshot has come since the last Welcome, so the world can be drawn.</summary>
+        public bool HasSnapshot { get; private set; }
+
+        /// <summary>The channel's weather, from the latest snapshot.</summary>
+        public Weather Weather { get; private set; }
+
+        /// <summary>The straw dummies of this player's map, from the latest snapshot; empty where there are none.</summary>
+        public IReadOnlyList<RemoteDummy> Dummies { get; private set; } = Array.Empty<RemoteDummy>();
+
         /// <summary>Items lying on the ground in the channel, from the latest snapshot.</summary>
         public IReadOnlyList<GroundItem> Ground { get; private set; } = Array.Empty<GroundItem>();
 
@@ -158,6 +167,7 @@ namespace DaKiem.Client.Net
                 return;
             }
 
+            Predictor.Aim = DummyAim();
             InputMessage input = Predictor.Advance(moveX, moveY, dash, combat.SkillPressed, combat.PotionPressed, refill, door);
             transport.Send(Packet.Encode(input));
         }
@@ -268,6 +278,7 @@ namespace DaKiem.Client.Net
             present.Clear();
             ServerClock.Observe(welcome.ServerTick);
             Status = OnlineStatus.Playing;
+            HasSnapshot = false;
             nextPingSec = Now;
             Message = resumedHere ? "Đã nối lại, giữ nguyên vị trí" : string.Empty;
             Welcomed?.Invoke();
@@ -281,6 +292,7 @@ namespace DaKiem.Client.Net
             }
 
             bool moved = snapshot.Map != Map;
+            HasSnapshot = true;
             Map = snapshot.Map;
             Predictor.Map = snapshot.Map;
             ServerClock.Observe(snapshot.ServerTick);
@@ -288,6 +300,8 @@ namespace DaKiem.Client.Net
             Predictor.Reconcile(snapshot.AckSequence, snapshot.Self);
             projectiles = snapshot.Projectiles;
             Ground = snapshot.Ground;
+            Weather = snapshot.Weather;
+            Dummies = snapshot.Dummies;
 
             if (GearRules.IsValid(config, snapshot.SelfAppearance))
             {
@@ -331,6 +345,63 @@ namespace DaKiem.Client.Net
             {
                 MapChanged?.Invoke();
             }
+        }
+
+        /// <summary>
+        /// The box of the dummy nearest to x, standing or not, for drawing where a blow landed: the blow that
+        /// knocks one down arrives in the same snapshot that shows it fallen. Null on a map without dummies.
+        /// </summary>
+        public CombatBox? DummyNear(double x)
+        {
+            TrainingConfig training = config.Maps[Map].Training;
+
+            if (training == null || training.Dummies.Count == 0)
+            {
+                return null;
+            }
+
+            MapDummy nearest = training.Dummies[0];
+
+            foreach (MapDummy dummy in training.Dummies)
+            {
+                if (Math.Abs(dummy.X - x) < Math.Abs(nearest.X - x))
+                {
+                    nearest = dummy;
+                }
+            }
+
+            return TrainingRules.Box(training, nearest.X);
+        }
+
+        /// <summary>The nearest standing dummy, which blows aim at on the server too; null where there is none.</summary>
+        private CombatTarget? DummyAim()
+        {
+            TrainingConfig training = config.Maps[Map].Training;
+
+            if (training == null || Dummies.Count != training.Dummies.Count)
+            {
+                return null;
+            }
+
+            var yard = new List<DummyState>(Dummies.Count);
+
+            for (int index = 0; index < Dummies.Count; index++)
+            {
+                yard.Add(new DummyState(training.Dummies[index].X));
+            }
+
+            int nearest = -1;
+            double x = Predictor.Movement.X;
+
+            for (int index = 0; index < yard.Count; index++)
+            {
+                if (!Dummies[index].Fallen && (nearest < 0 || Math.Abs(yard[index].X - x) < Math.Abs(yard[nearest].X - x)))
+                {
+                    nearest = index;
+                }
+            }
+
+            return nearest < 0 ? (CombatTarget?)null : new CombatTarget(TrainingRules.Box(training, yard[nearest].X), 0m);
         }
 
         /// <summary>Whether the boss is on this player's map, so they can see and aim at it.</summary>

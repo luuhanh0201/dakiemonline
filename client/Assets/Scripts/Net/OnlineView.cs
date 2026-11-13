@@ -95,6 +95,7 @@ namespace DaKiem.Client.Net
             }
 
             SortEvents();
+            world.SetVillage(client.Weather, client.Dummies);
             ShowSelf(blend, frameSeconds);
             ShowOthers(frameSeconds);
             ShowBoss();
@@ -207,7 +208,7 @@ namespace DaKiem.Client.Net
             correction = Vector2.MoveTowards(correction, Vector2.zero, correction.magnitude * CorrectionFadePerSecond * frameSeconds + 0.001f);
             Vector2 feet = Vector2.Lerp(previousFeet, currentFeet, blend) + correction;
             world.Follow(feet, state.Facing);
-            selfFx.Show(client, state, predictor.Combat, LivingBoss, config.Boss, EventsOf(client.PlayerId), hurt.Contains(client.PlayerId), true, frameSeconds);
+            selfFx.Show(client, state, predictor.Combat, LivingBoss, config.Boss, EventsOf(client.PlayerId), hurt.Contains(client.PlayerId), true, frameSeconds, client.DummyNear(state.X));
             self.SetVisible(!predictor.Resources.IsDead);
             self.ShowAppearance(config, client.SelfAppearance);
             self.Show(
@@ -247,7 +248,7 @@ namespace DaKiem.Client.Net
 
                 remote.View.SetVisible(!dead);
                 remote.View.ShowAppearance(config, now.Appearance);
-                remote.Fx.Show(remote, movement, combat, LivingBoss, config.Boss, EventsOf(pair.Key), hurt.Contains(pair.Key), false, frameSeconds);
+                remote.Fx.Show(remote, movement, combat, LivingBoss, config.Boss, EventsOf(pair.Key), hurt.Contains(pair.Key), false, frameSeconds, client.DummyNear(now.X));
                 remote.View.Show(
                     new Vector2(now.X, now.Y),
                     now.Facing,

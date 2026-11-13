@@ -388,7 +388,7 @@ public class ServerTests
         Session b = Join(server, second);
         TickAll(server, 2);
         int house = config.MapIndex("map.house");
-        int yard = config.MapIndex("map.test");
+        int yard = config.MapIndex("map.village");
         MapDoor door = config.Maps[house].Doors[0];
 
         Assert.Equal(house, first.Last<WelcomeMessage>().Map);
@@ -459,7 +459,54 @@ public class ServerTests
 
         TickAll(server);
 
-        Assert.Equal(config.MapIndex("map.test"), client.Last<SnapshotMessage>().Map);
+        Assert.Equal(config.MapIndex("map.village"), client.Last<SnapshotMessage>().Map);
+    }
+
+    [Fact]
+    public void PlayersInTheVillageSeeTheDummiesTakeHitsAndTheWeather()
+    {
+        var server = new GameServer(config, HouseServer());
+        var inside = new FakeConnection();
+        var outside = new FakeConnection();
+        Join(server, inside);
+        Session b = Join(server, outside);
+        TickAll(server);
+        uint sequence = 0;
+        GoThroughDoor(server, b, outside, ref sequence, config.Maps[config.MapIndex("map.house")].Doors[0].X);
+        int village = config.MapIndex("map.village");
+        TrainingConfig training = config.Maps[village].Training!;
+
+        Assert.Equal(village, outside.Last<SnapshotMessage>().Map);
+        Assert.Equal(training.Dummies.Count, outside.Last<SnapshotMessage>().Dummies.Count);
+        Assert.Empty(inside.Last<SnapshotMessage>().Dummies);
+        Assert.Equal(Weather.Clear, outside.Last<SnapshotMessage>().Weather);
+
+        RoomPlayer player = b.Runner.Room.Find(b.PlayerId)!;
+        MovementSnapshot at = player.Movement.Capture();
+        player.Movement.Restore(new MovementSnapshot(training.Dummies[0].X - 0.5d, 0d, 0d, 1, true, at.Stamina, 0d, 0, 0, 0, 0, 0, 0, 0));
+        b.Runner.Input(b.PlayerId, outside, InputMessage.FromJoystick(++sequence, 0d, 0d, false, SkillSlot.Attack));
+        TickAll(server, Ticks.PerSecond);
+
+        RemoteDummy first = outside.Last<SnapshotMessage>().Dummies[0];
+        Assert.False(first.Fallen);
+        Assert.Equal(1, first.Hits);
+        Assert.Equal(0, outside.Last<SnapshotMessage>().Dummies[1].Hits);
+        Assert.False(outside.Last<SnapshotMessage>().Dummies[1].Fallen);
+    }
+
+    [Fact]
+    public void ACharacterSavedOnTheHiddenTestMapStartsOverInTheHouse()
+    {
+        var server = new GameServer(config, HouseServer());
+        var client = new FakeConnection();
+        var identity = new PlayerIdentity(79, "Khách Cũ");
+
+        server.Hello(new HelloMessage(Packet.ProtocolVersion, Array.Empty<byte>()), client, identity, new MapSpot(config.MapIndex("map.test"), 12d));
+        TickAll(server);
+
+        Assert.Equal(config.MapIndex("map.house"), client.Last<WelcomeMessage>().Map);
+        Assert.True(MapRules.Reachable(config, HouseServer(), config.MapIndex("map.village")));
+        Assert.False(MapRules.Reachable(config, HouseServer(), config.MapIndex("map.test")));
     }
 
     [Fact]
@@ -504,8 +551,8 @@ public class ServerTests
         server.Hello(new HelloMessage(Packet.ProtocolVersion, Array.Empty<byte>()), again, identity, saved);
         TickAll(server);
 
-        Assert.Equal(config.MapIndex("map.test"), saved!.Value.Map);
-        Assert.Equal(config.MapIndex("map.test"), again.Last<WelcomeMessage>().Map);
+        Assert.Equal(config.MapIndex("map.village"), saved!.Value.Map);
+        Assert.Equal(config.MapIndex("map.village"), again.Last<WelcomeMessage>().Map);
     }
 
     [Fact]
