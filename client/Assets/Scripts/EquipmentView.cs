@@ -23,7 +23,7 @@ namespace DaKiem.Client
                 items[slot] = new List<string>();
             }
 
-            foreach (Sprite sprite in Resources.LoadAll<Sprite>(Folder))
+            foreach (Sprite sprite in DaKiem.Client.Content.ContentAssets.LoadAll<Sprite>(Folder))
             {
                 sprites[sprite.name] = sprite;
                 string[] nameParts = sprite.name.Split('_');

@@ -104,7 +104,7 @@ namespace DaKiem.Client.Accounts
         /// <summary>Each cloud of lop2 on its own, where it sat, drifting slowly.</summary>
         private void Clouds()
         {
-            var manifest = Resources.Load<TextAsset>(Folder + "lop2_may");
+            var manifest = DaKiem.Client.Content.ContentAssets.Load<TextAsset>(Folder + "lop2_may");
 
             if (manifest == null)
             {
@@ -432,7 +432,7 @@ namespace DaKiem.Client.Accounts
         /// </summary>
         private void Pieces(string layer, Vector2 hangsFrom, float degrees, float period, Func<string, float> degreesOf = null, Func<string, Vector2?> rootOf = null)
         {
-            var manifest = Resources.Load<TextAsset>(Folder + layer);
+            var manifest = DaKiem.Client.Content.ContentAssets.Load<TextAsset>(Folder + layer);
 
             if (manifest == null)
             {
@@ -513,11 +513,11 @@ namespace DaKiem.Client.Accounts
             return image;
         }
 
-        private static Sprite Load(string name) => Resources.Load<Sprite>(Folder + name);
+        private static Sprite Load(string name) => DaKiem.Client.Content.ContentAssets.Load<Sprite>(Folder + name);
 
         private static Material Material(string shader)
         {
-            var found = Resources.Load<Shader>(shader);
+            var found = DaKiem.Client.Content.ContentAssets.Load<Shader>(shader);
             return found == null ? null : new Material(found);
         }
 

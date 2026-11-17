@@ -17,6 +17,8 @@ namespace DaKiem.Client.Editor
         public static void Run()
         {
             ApplyPlayerSettings();
+            ContentBuild.ExportBaseline();
+            if (System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-contentFixtures") >= 0) ContentSmokeFixtures.Export();
             AssetDatabase.SaveAssets();
 
             BuildReport report = BuildPipeline.BuildPlayer(new BuildPlayerOptions
@@ -33,6 +35,7 @@ namespace DaKiem.Client.Editor
 
         private static void ApplyPlayerSettings()
         {
+            AppIconSettings.Apply();
             PlayerSettings.productName = "Dạ Kiếm Online";
             PlayerSettings.companyName = "Da Kiem Online";
             PlayerSettings.SetScriptingBackend(NamedBuildTarget.Standalone, ScriptingImplementation.Mono2x);

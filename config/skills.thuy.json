@@ -1,5 +1,12 @@
 {
   "version": 1,
+  "autoFight": {
+    "id": "thuy.tu_danh",
+    "status": "DE_XUAT",
+    "source": "Yeu cau nguoi dung 14/11/2026: cham dup vao quai thi ghim va tu danh, chi chieu hoi nhanh moi thay danh thuong; nguong 5 giay va dung cach 5 don vi la de xuat, ban duyet 14/11/2026 (docs/KE-HOACH-CHAM-DOI-TUONG.md)",
+    "maxCooldownSec": 5,
+    "rangedStandOff": 5
+  },
   "skills": [
     {
       "id": "thuy.danh_thuong",

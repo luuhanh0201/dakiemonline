@@ -2,7 +2,8 @@
 # The game server serves that folder: dotnet run --project server/Game.Server, then open http://<pc>:7777/
 param(
     [string]$Unity = 'C:\Program Files\Unity\Hub\Editor\6000.6.7f1\Editor\Unity.exe',
-    [string]$LogFile = (Join-Path $env:TEMP 'dakiem-web-build.log')
+    [string]$LogFile = (Join-Path $env:TEMP 'dakiem-web-build.log'),
+    [string]$OutputDirectory = 'Builds/Web'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -14,10 +15,11 @@ $arguments = @(
     '-batchmode', '-nographics', '-buildTarget', 'WebGL',
     '-projectPath', "`"$(Join-Path $root 'client')`"",
     '-executeMethod', 'DaKiem.Client.Editor.WebBuild.Run',
+    '-webOutput', "`"$OutputDirectory`"",
     '-logFile', "`"$LogFile`""
 )
 
 $process = Start-Process -FilePath $Unity -ArgumentList $arguments -WindowStyle Hidden -Wait -PassThru
 if ($process.ExitCode -ne 0) { throw "Web build failed, see $LogFile" }
 
-Write-Output "Built $(Join-Path $root 'client/Builds/Web')"
+Write-Output "Built $(Join-Path (Join-Path $root 'client') $OutputDirectory)"

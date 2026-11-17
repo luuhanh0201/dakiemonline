@@ -8,6 +8,19 @@ namespace Game.Rules.Tests
 
         private static int Item(string id) => Config.Gear.ToList().FindIndex(item => item.Id == id);
 
+        [Fact]
+        public void OlderCatalogWithoutDescriptionsKeepsTheSameEquipment()
+        {
+            var files = TestConfig.Files();
+            Assert.All(Config.Gear, item => Assert.False(string.IsNullOrWhiteSpace(item.Description)));
+            files[GameConfig.ItemsFile] = System.Text.RegularExpressions.Regex.Replace(
+                files[GameConfig.ItemsFile], @"\s*""description"":\s*""[^""]*"",", string.Empty);
+            GameConfig older = GameConfig.Parse(files);
+            Assert.All(older.Gear, item => Assert.Equal(string.Empty, item.Description));
+            Assert.Equal(Config.Gear.Select(item => item.Id), older.Gear.Select(item => item.Id));
+            Assert.Equal(GearRules.Default(Config), GearRules.Default(older));
+        }
+
         private static InvalidConfigException Rejected(string find, string replace)
         {
             var files = TestConfig.Files();

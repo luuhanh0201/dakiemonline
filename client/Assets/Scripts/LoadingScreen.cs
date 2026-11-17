@@ -133,7 +133,7 @@ namespace DaKiem.Client
 
             for (int number = 1; ; number++)
             {
-                Sprite picture = Resources.Load<Sprite>($"UI/Loading/loading_{number}");
+                Sprite picture = DaKiem.Client.Content.ContentAssets.Load<Sprite>($"UI/Loading/loading_{number}");
 
                 if (picture == null)
                 {

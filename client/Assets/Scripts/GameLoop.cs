@@ -39,6 +39,13 @@ namespace DaKiem.Client
         private AccountInfo playingAccount;
         private OnlineClient online;
         private OnlineView onlineView;
+        private GameMenu gameMenu;
+        private bool leaveWanted;
+        private string shownPlace;
+        private TargetControl targets;
+
+        /// <summary>The skill the attack button casts; null for the plain attack.</summary>
+        private SkillSlot? chosenSkill;
         private bool refillPressed;
 
         // The door button (E on a keyboard) goes out with the next tick's input.
@@ -80,7 +87,7 @@ namespace DaKiem.Client
         private static void Create()
         {
 #if UNITY_STANDALONE_WIN || UNITY_EDITOR
-            if (AccountUiSmoke.Enabled) return;
+            if (AccountUiSmoke.Enabled || AndroidUpdateSmoke.Enabled || Content.ContentUpdateSmoke.Enabled) return;
 #endif
             new GameObject(nameof(GameLoop)).AddComponent<GameLoop>();
         }
@@ -97,6 +104,13 @@ namespace DaKiem.Client
         {
             AndroidImmersive.Apply();
 
+#if UNITY_ANDROID && !UNITY_EDITOR
+            yield return AndroidAppUpdate.CheckBeforeLogin();
+#endif
+#if (UNITY_ANDROID || UNITY_STANDALONE_WIN) && !UNITY_EDITOR
+            if (System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-menu-ui-smoke") < 0)
+                yield return Content.ContentUpdater.BeforeLogin();
+#endif
             var files = new Dictionary<string, string>();
             yield return ConfigFiles.LoadAll(files);
             yield return ConfigFiles.Load(GameConfig.AccountsFile, files);
@@ -109,6 +123,7 @@ namespace DaKiem.Client
                 accountRules = GameConfig.ParseAccounts(files.TryGetValue(GameConfig.AccountsFile, out string accounts)
                     ? accounts
                     : throw new InvalidConfigException(GameConfig.AccountsFile, "file", "file is missing"));
+                Content.ContentAssets.SetLocalRules(files);
             }
             catch (InvalidConfigException error)
             {
@@ -118,12 +133,14 @@ namespace DaKiem.Client
             }
 
             hud = new HudView();
+            targets = new TargetControl(config, hud);
             loading = LoadingScreen.Create();
             input = new InputReader(hud);
             view = new WorldView(config);
             character = new CharacterView();
             practiceAppearance = GearRules.Default(config);
-            inventory = InventoryScreen.Create(config, (kind, target, to) => online?.ItemAction(kind, target, to));
+            inventory = InventoryScreen.Create(config, (kind, target, to) => online?.ItemAction(kind, target, to), () => online?.SelfAppearance ?? practiceAppearance);
+            gameMenu = GameMenu.Create(config);
             ground = new GroundView(config);
             hud.ShowBossBar(false);
             hud.SetVisible(false);
@@ -138,6 +155,18 @@ namespace DaKiem.Client
             {
                 serverAddress = System.IO.File.ReadAllText(addressFile).Trim();
             }
+#endif
+
+#if UNITY_ANDROID && !UNITY_EDITOR
+            // Retire the saved Quick Tunnel links used by earlier APK test builds.
+            try
+            {
+                var savedServer = new System.Uri(NetTransport.NormalizeUrl(serverAddress));
+                if (savedServer.Host.EndsWith(".trycloudflare.com", System.StringComparison.OrdinalIgnoreCase)
+                    || (savedServer.IsLoopback && savedServer.Port == 7777))
+                    serverAddress = "https://dakiem.online";
+            }
+            catch (System.UriFormatException) { }
 #endif
 
             bool joinNow = false;
@@ -165,6 +194,7 @@ namespace DaKiem.Client
 
         private void StartFight()
         {
+            input.WorldInputBlocked = false;
             bossView ??= new BossView();
             fx ??= new FxView(view);
             hud.SetVisible(true);
@@ -188,7 +218,9 @@ namespace DaKiem.Client
             GameFrame.Active = online != null || fight != null;
             GameFrame.Apply(Camera.main);
             hud?.FitScreen();
-            FpsOverlay.Covered = loading != null && loading.Visible;
+            FpsOverlay.Covered = (loading != null && loading.Visible)
+                || (inventory != null && inventory.Visible)
+                || (gameMenu != null && gameMenu.Visible);
 
             if (online != null)
             {
@@ -208,12 +240,13 @@ namespace DaKiem.Client
                 StartFight();
             }
 
+            ChooseSkill();
             accumulator += Mathf.Min(Time.unscaledDeltaTime, MaxFrameSeconds);
 
             while (accumulator >= Ticks.DeltaSeconds)
             {
                 var intent = new MovementIntent(input.MoveX, input.MoveY, input.ConsumeDash());
-                fight.Step(intent, input.ConsumeCombat());
+                fight.Step(intent, AttackWithChosen(input.ConsumeCombat(), fight.Combat, fight.Resources));
                 previousFeet = currentFeet;
                 currentFeet = ReadFeet();
                 previousBossX = currentBossX;
@@ -279,6 +312,7 @@ namespace DaKiem.Client
                 (float)fight.Resources.Hp / character.MaxHp,
                 (float)(fight.Resources.Energy / character.MaxEnergy),
                 (float)(fight.Player.Stamina / character.MaxStamina));
+            hud.ShowHealthNumber(fight.Resources.Hp, character.MaxHp);
             hud.ShowBossHealth((float)fight.Boss.Hp / config.Boss.MaxHp);
             ShowButtons(fight.Combat, fight.Resources);
 
@@ -309,14 +343,17 @@ namespace DaKiem.Client
                     double left = combat.CooldownSecondsLeft(slot.Value);
                     SkillConfig skill = config.Skill(slot.Value);
                     bool ready = Combat.IsSkillReady(combat, resources, skill);
-                    hud.SetButton(spec.Button, left > 0d ? WholeSeconds(left) : spec.Label, !ready);
+                    string idle = hud.HasIcon(spec.Button) ? string.Empty : spec.Label;
+                    hud.SetButton(spec.Button, left > 0d ? WholeSeconds(left) : idle, !ready);
                     hud.SetCooldown(spec.Button, skill.CooldownSec > 0d ? (float)(left / skill.CooldownSec) : 0f);
                 }
                 else if (spec.Button == HudButton.Potion)
                 {
                     double left = combat.PotionCooldownSecondsLeft;
-                    string label = left > 0d ? WholeSeconds(left) : $"{spec.Label}\n{combat.PotionsLeft}";
-                    hud.SetButton(spec.Button, label, !Combat.IsPotionReady(combat));
+                    bool icon = hud.HasIcon(spec.Button);
+                    string idle = icon ? string.Empty : $"{spec.Label}\n{combat.PotionsLeft}";
+                    hud.SetButton(spec.Button, left > 0d ? WholeSeconds(left) : idle, !Combat.IsPotionReady(combat));
+                    hud.SetCount(spec.Button, icon ? combat.PotionsLeft.ToString() : string.Empty);
                     hud.SetCooldown(spec.Button, (float)(left / config.Potion.CooldownSec));
                 }
             }
@@ -355,6 +392,8 @@ namespace DaKiem.Client
 #if UNITY_WEBGL && !UNITY_EDITOR
             // The server hands out the web build too, so the page's own address is the server.
             return new System.Uri(Application.absoluteURL).GetLeftPart(System.UriPartial.Authority);
+#elif UNITY_ANDROID && !UNITY_EDITOR
+            return "https://dakiem.online";
 #else
             return "127.0.0.1:7777";
 #endif
@@ -364,8 +403,14 @@ namespace DaKiem.Client
         private void JoinServer(string url, string loginToken, AccountInfo account, string characterName)
         {
             serverAddress = screens.Address;
-            PlayerPrefs.SetString(ServerAddressKey, serverAddress);
-            PlayerPrefs.Save();
+#if UNITY_STANDALONE
+            // Scripted guests must not replace the player's saved server with a temporary test port.
+            if (System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-join") < 0)
+#endif
+            {
+                PlayerPrefs.SetString(ServerAddressKey, serverAddress);
+                PlayerPrefs.Save();
+            }
             playingAccount = account;
             online = new OnlineClient(url, config, loginToken);
             online.RoundTrip += milliseconds => NetLog.Write(online, milliseconds);
@@ -397,6 +442,12 @@ namespace DaKiem.Client
             ground.Clear();
             online = null;
             onlineView = null;
+            targets.Reset();
+            gameMenu.Close();
+            hud.PortraitOpensMenu = false;
+            hud.SetName(string.Empty);
+            hud.SetPlace(null);
+            shownPlace = null;
             hud.ShowBossBar(false);
             hud.SetVisible(false);
             loading.HideNow();
@@ -408,8 +459,18 @@ namespace DaKiem.Client
 
         private void UpdateOnline()
         {
+            input.WorldInputBlocked = screens.Visible || inventory.Visible || loading.Visible || hud.DialogVisible || gameMenu.Visible;
             input.Update();
             input.ConsumeReplay();
+
+            // Leaving from the menu waits for this frame, so nothing below runs on a closed connection.
+            if (leaveWanted)
+            {
+                leaveWanted = false;
+                LeaveServer(null);
+                return;
+            }
+
             float frame = Mathf.Min(Time.unscaledDeltaTime, MaxFrameSeconds);
             online.Update(frame);
             onlineView.SmoothCorrection();
@@ -431,12 +492,13 @@ namespace DaKiem.Client
             // F1 to F3 only change clothes when practising alone; online the bag decides.
             input.ConsumeGearChange();
 
-            if (UnityEngine.InputSystem.Keyboard.current?.eKey.wasPressedThisFrame == true && !screens.Visible && !inventory.Visible)
+            bool shortcutsAllowed = !screens.Visible && !loading.Visible && !hud.DialogVisible && !gameMenu.Visible;
+            if (UnityEngine.InputSystem.Keyboard.current?.eKey.wasPressedThisFrame == true && shortcutsAllowed && !inventory.Visible)
             {
                 UseNearby();
             }
 
-            if (UnityEngine.InputSystem.Keyboard.current?.bKey.wasPressedThisFrame == true && !screens.Visible)
+            if (UnityEngine.InputSystem.Keyboard.current?.bKey.wasPressedThisFrame == true && shortcutsAllowed)
             {
                 inventory.Toggle(online.Inventory);
             }
@@ -446,15 +508,40 @@ namespace DaKiem.Client
             ground.Show(online.Ground);
             accumulator += frame;
 
-            // While an account screen or the bag is over the game, touches belong to it and the character stands still.
+            // While an account screen, the bag or an NPC's words are over the game, touches belong to them and
+            // the character stands still.
             FollowLoading();
-            bool covered = screens.Visible || inventory.Visible || loading.Visible;
+            bool covered = screens.Visible || inventory.Visible || loading.Visible || hud.DialogVisible || gameMenu.Visible;
+            HandleTargets(covered);
+            ChooseSkill();
 
             while (accumulator >= Ticks.DeltaSeconds)
             {
                 bool dash = input.ConsumeDash();
+                Predictor ticking = online.Predictor;
                 CombatIntent combat = input.ConsumeCombat();
-                online.Tick(covered ? 0d : input.MoveX, covered ? 0d : input.MoveY, dash && !covered, covered ? default : combat, refillPressed && !covered, doorPressed && !screens.Visible && !inventory.Visible);
+                combat = ticking == null ? combat : AttackWithChosen(combat, ticking.Combat, ticking.Resources);
+                double moveX = input.MoveX;
+
+                // Pushing the joystick takes back control; otherwise a pinned target or an NPC walk steers,
+                // and a skill pressed by hand still wins over the one fighting picks.
+                if (moveX != 0d || input.MoveY != 0d || dash)
+                {
+                    targets.StopAuto();
+                }
+                else if (!covered && targets.Steer(online, chosenSkill, out AutoStep step))
+                {
+                    moveX = step.MoveX;
+                    combat = combat.SkillPressed == null && step.Skill != null ? new CombatIntent(step.Skill, combat.PotionPressed) : combat;
+                }
+                else if (combat.SkillPressed != null)
+                {
+                    moveX = targets.FaceTarget(online);
+                }
+
+                // FollowLoading queues this command only after the loading screen covers the world.
+                // Normal controls stay blocked, but the queued door request must reach the server.
+                online.Tick(covered ? 0d : moveX, covered ? 0d : input.MoveY, dash && !covered, covered ? default : combat, refillPressed && !covered, doorPressed);
                 refillPressed = false;
                 doorPressed = false;
                 onlineView.AfterTick();
@@ -462,6 +549,7 @@ namespace DaKiem.Client
             }
 
             onlineView.Show(accumulator / (float)Ticks.DeltaSeconds, frame);
+            FollowMenu(covered);
 
             // The boss and its health bar live on the test map only, not in the house.
             if (bossBarShown != online.BossOnMap)
@@ -482,14 +570,110 @@ namespace DaKiem.Client
                 (float)predictor.Resources.Hp / stats.MaxHp,
                 (float)(predictor.Resources.Energy / stats.MaxEnergy),
                 (float)(predictor.Movement.Stamina / stats.MaxStamina));
+            hud.ShowHealthNumber(predictor.Resources.Hp, stats.MaxHp);
             hud.ShowBossHealth(online.Boss == null ? 1f : (float)online.Boss.Hp / config.Boss.MaxHp);
             ShowButtons(predictor.Combat, predictor.Resources);
+            ShowPlace();
+        }
+
+        /// <summary>
+        /// Touches on the world pick a target or an NPC; holding a skill square chooses the skill pinned
+        /// targets are fought with. The ring and the target's health follow every frame.
+        /// </summary>
+        private void HandleTargets(bool covered)
+        {
+            bool touched = input.ConsumeWorldTouch(out Vector2 where, out bool twice);
+
+            if (touched && !covered && online.Status == OnlineStatus.Playing)
+            {
+                targets.Touch(where, twice, online);
+            }
+
+            targets.Show(online);
+        }
+
+        /// <summary>
+        /// A touched skill square becomes the skill the attack button casts; touching the lit square again
+        /// goes back to the plain attack (decided 14/11/2026).
+        /// </summary>
+        private void ChooseSkill()
+        {
+            SkillSlot? touched = input.ConsumeSquareTouched();
+
+            if (touched != null)
+            {
+                chosenSkill = chosenSkill == touched ? null : touched;
+            }
+
+            HudButton lit = HudButton.None;
+
+            foreach (HudButtonSpec spec in HudLayout.Buttons)
+            {
+                if (spec.Button != HudButton.Attack && chosenSkill != null && HudLayout.SlotOf(spec.Button) == chosenSkill)
+                {
+                    lit = spec.Button;
+                }
+            }
+
+            hud.SetChosenSkill(lit);
+        }
+
+        /// <summary>The attack button casts the chosen skill when it is ready, and the plain attack otherwise.</summary>
+        private CombatIntent AttackWithChosen(CombatIntent pressed, CombatState combat, ResourceState resources)
+        {
+            if (pressed.SkillPressed != SkillSlot.Attack || chosenSkill == null)
+            {
+                return pressed;
+            }
+
+            bool ready = Combat.IsSkillReady(combat, resources, config.Skill(chosenSkill.Value));
+            return ready ? new CombatIntent(chosenSkill, pressed.PotionPressed) : pressed;
+        }
+
+        /// <summary>
+        /// Touching the portrait opens the main menu (approved 15/11/2026): the character, the bag, quests,
+        /// and settings with linking a guest account and leaving.
+        /// </summary>
+        private void FollowMenu(bool covered)
+        {
+            hud.PortraitOpensMenu = !covered && online.Status == OnlineStatus.Playing;
+
+            if (!input.ConsumePortrait() || !hud.PortraitOpensMenu)
+            {
+                return;
+            }
+
+            AccountInfo account = screens.Account ?? playingAccount;
+            gameMenu.Open(new GameMenu.MenuState
+            {
+                Name = online.CharacterName,
+                Appearance = online.SelfAppearance,
+                Inventory = online.Inventory,
+                Guest = account != null && account.IsGuest,
+                OpenBag = () => inventory.Toggle(online.Inventory),
+                Link = () => screens.ShowLinkInGame(),
+                Leave = () => leaveWanted = true,
+            });
+        }
+
+        /// <summary>The name and the map plaque.</summary>
+        private void ShowPlace()
+        {
+            hud.SetName(online.CharacterName);
+            string place = $"{config.Maps[online.Map].Name} · Kênh {online.ChannelId}";
+
+            if (place != shownPlace)
+            {
+                shownPlace = place;
+                hud.SetPlace(place);
+            }
         }
 
         private void DrawOnline(GUIStyle style)
         {
-            // OnGUI draws above every canvas, so nothing of it may show while an account screen or the bag is up.
-            if (screens.Visible || inventory.Visible || loading.Visible)
+            // OnGUI draws above every canvas, so nothing of it may show while an account screen, the bag or
+            // the menu is up.
+            if (screens.Visible || inventory.Visible || loading.Visible || gameMenu.Visible)
             {
                 return;
             }
@@ -497,13 +681,16 @@ namespace DaKiem.Client
             var small = new GUIStyle(style) { fontSize = style.fontSize * 2 / 3, alignment = TextAnchor.UpperCenter };
             var shadow = new GUIStyle(small) { normal = { textColor = Color.black } };
             LatencyStats latency = online.Latency;
-            string status = online.Status == OnlineStatus.Playing
-                ? $"{online.CharacterName} · Kênh {online.ChannelId} · P{online.PlayerId} · {online.Present.Count + 1} người · ping {online.LastRoundTripMs:0} ms (TB {latency.Mean:0}, p95 {latency.Percentile(95d):0}, {latency.Count} lần)"
-                : online.Message;
+            bool playing = online.Status == OnlineStatus.Playing;
 
-            if (online.Status == OnlineStatus.Playing && online.Message.Length > 0)
+            // The network line is for measuring, so only the test room shows it (decided 13/11/2026).
+            string status = !playing ? online.Message
+                : online.TestRoom ? $"{online.CharacterName} · Kênh {online.ChannelId} · P{online.PlayerId} · {online.Present.Count + 1} người · ping {online.LastRoundTripMs:0} ms (TB {latency.Mean:0}, p95 {latency.Percentile(95d):0}, {latency.Count} lần)"
+                : string.Empty;
+
+            if (playing && online.Message.Length > 0)
             {
-                status += "\n" + online.Message;
+                status = status.Length > 0 ? status + "\n" + online.Message : online.Message;
             }
 
             // Below the FPS counter, which sits from about 8% to 13% of the height.
@@ -516,26 +703,11 @@ namespace DaKiem.Client
             float unit = frame.height / 12f;
             var button = new GUIStyle(GUI.skin.button) { fontSize = small.fontSize };
 
-            if (GUI.Button(new Rect(frame.xMax - unit * 3.2f, frame.y + unit * 0.2f, unit * 3f, unit * 0.9f), "Thoát", button))
-            {
-                LeaveServer(null);
-                return;
-            }
-
-            // Only guests have something to link; the button goes once the account is linked.
-            AccountInfo account = screens.Account ?? playingAccount;
-
-            if (account != null
-                && account.IsGuest
-                && GUI.Button(new Rect(frame.xMax - unit * 3.2f, frame.y + unit * 2.4f, unit * 3f, unit * 0.9f), "Liên kết TK", button))
-            {
-                screens.ShowLinkInGame();
-            }
-
-            // Only the test room has a refill button; real play never shows it.
+            // Leaving, linking and the bag are in the portrait's menu. Only the test room has a refill
+            // button, in the top right corner left of chat; real play never shows it.
             if (online.TestRoom
-                && online.Status == OnlineStatus.Playing
-                && GUI.Button(new Rect(frame.xMax - unit * 3.2f, frame.y + unit * 1.3f, unit * 3f, unit * 0.9f), "Nạp đầy", button))
+                && playing
+                && GUI.Button(new Rect(frame.xMax - unit * 5f, frame.y + unit * 0.45f, unit * 3f, unit * 0.9f), "Nạp đầy", button))
             {
                 refillPressed = true;
             }
@@ -545,8 +717,8 @@ namespace DaKiem.Client
         }
 
         /// <summary>
-        /// "Túi đồ" opens the bag (B on a keyboard). Standing by an item on the ground, a button picks
-        /// it up (E on a keyboard), as GDD 15.1 keeps the bag in a menu rather than always open.
+        /// Standing by an item on the ground, a button picks it up (E on a keyboard); by a door, a button
+        /// in the doorway goes through. The bag itself opens from the portrait's menu or with B.
         /// </summary>
         private void DrawBagButtons(float unit, GUIStyle button)
         {
@@ -556,12 +728,6 @@ namespace DaKiem.Client
             }
 
             Rect frame = GameFrame.Gui;
-
-            if (GUI.Button(new Rect(frame.xMax - unit * 3.2f, frame.y + unit * 3.5f, unit * 3f, unit * 0.9f), "Túi đồ", button))
-            {
-                inventory.Toggle(online.Inventory);
-            }
-
             GroundItem? near = Nearby();
             var place = new Rect(frame.center.x - unit * 2.5f, frame.y + frame.height * 0.62f, unit * 5f, unit * 0.95f);
 

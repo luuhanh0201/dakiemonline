@@ -90,10 +90,10 @@ namespace DaKiem.Client.Editor
                     GameConfig game = LoadGameConfig();
                     long id = 0;
                     var items = InventoryRules.Starter(game).Select(item => new OwnedItem(++id, item.Item, item.Quantity, item.Place, item.Slot)).ToList();
-                    var bag = InventoryScreen.Create(game, (kind, target, to) => { });
+                    var bag = InventoryScreen.Create(game, (kind, target, to) => { }, () => GearRules.Default(game));
                     bag.Toggle(new InventoryMessage(game.Bag.Slots, items));
                     Call(bag, "Select", items.First(item => item.Place == ItemPlace.Bag).Id);
-                    bagPanel = (RectTransform)bag.transform.Find("Inventory/SafeContent/Stage/panel");
+                    bagPanel = (RectTransform)bag.transform.Find("Inventory/SafeContent/Stage/panel_big");
                     break;
                 }
                 case "servers":

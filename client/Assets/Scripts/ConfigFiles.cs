@@ -21,6 +21,16 @@ namespace DaKiem.Client
         /// <summary>One file into <paramref name="files"/>, such as <see cref="GameConfig.AccountsFile"/>.</summary>
         public static IEnumerator Load(string fileName, Dictionary<string, string> files)
         {
+            if (Content.ContentAssets.TryReadConfig(fileName, out string patched))
+            {
+                files[fileName] = patched;
+                yield break;
+            }
+            yield return LoadOriginal(fileName, files);
+        }
+
+        public static IEnumerator LoadOriginal(string fileName, Dictionary<string, string> files)
+        {
             string path = $"{Application.streamingAssetsPath}/config/{fileName}";
             string url = path.Contains("://") ? path : $"file://{path}";
 

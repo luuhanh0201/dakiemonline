@@ -20,7 +20,13 @@ namespace DaKiem.Client
         private static readonly Color OutlineColor = new Color32(0x14, 0x1B, 0x3A, 0xFF);
         private static readonly Color WaterColor = new Color32(0x3D, 0x8B, 0xF2, 0xFF);
         private static readonly Color FoamColor = new Color32(0xDC, 0xE6, 0xFF, 0xFF);
-        private static readonly Color GoldColor = new Color32(0xF2, 0xC7, 0x6E, 0xFF);
+        // The HUD's light gold line (ART.md: "viền vàng nhẹ") and how far in from the edge each line reaches,
+        // as a share of a disc's radius or in pixels of a 32-pixel frame. Made thinner on 14/11/2026.
+        private static readonly Color SoftGold = new Color32(0xC9, 0xA4, 0x6A, 0xFF);
+        private const float DiscOutline = 0.955f;
+        private const float DiscGold = 0.915f;
+        private const float FrameOutline = 2f;
+        private const float FrameGold = 3.5f;
 
         private delegate float Shape(Vector2 point);
 
@@ -105,7 +111,8 @@ namespace DaKiem.Client
                     float distance = point.magnitude;
                     float share = distance / radius;
                     bool inLitBand = (point - new Vector2(0f, -radius * 0.16f)).magnitude > radius * 0.8f && point.y > 0f;
-                    Color color = share > 0.9f ? OutlineColor : share > 0.83f ? GoldColor : inLitBand ? lit : fill;
+                    // A thin dark rim and a thin soft-gold ring, so the HUD stays light over the scene.
+                    Color color = share > DiscOutline ? OutlineColor : share > DiscGold ? SoftGold : inLitBand ? lit : fill;
 
                     color.a = Mathf.Clamp01(radius - distance + 0.5f);
                     texture.SetPixel(x, y, color);
@@ -158,7 +165,7 @@ namespace DaKiem.Client
                         Mathf.Abs(x + 0.5f - half) - (half - FrameCorner),
                         Mathf.Abs(y + 0.5f - half) - (half - FrameCorner));
                     float distance = new Vector2(Mathf.Max(corner.x, 0f), Mathf.Max(corner.y, 0f)).magnitude - FrameCorner;
-                    Color color = outlined && distance > -4f ? OutlineColor : gold && distance > -6f ? GoldColor : fill;
+                    Color color = outlined && distance > -FrameOutline ? OutlineColor : gold && distance > -FrameGold ? SoftGold : fill;
 
                     color.a *= Mathf.Clamp01(0.5f - distance);
                     texture.SetPixel(x, y, color);

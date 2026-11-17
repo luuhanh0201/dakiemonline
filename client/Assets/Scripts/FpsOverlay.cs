@@ -76,10 +76,11 @@ namespace DaKiem.Client
 
             style ??= new GUIStyle(GUI.skin.label) { normal = { textColor = Color.white } };
 
-            // Inside the game frame, like the HUD, and sized with it when the window changes.
+            // Inside the game frame, like the HUD, and sized with it when the window changes: under the
+            // map plaque's left end, clear of the health bars.
             Rect frame = GameFrame.Gui;
             style.fontSize = Mathf.Max(1, (int)(frame.height / FontSizeDivisor));
-            GUI.Label(new Rect(frame.x + frame.width * 0.3f, frame.y + frame.height / 12f, frame.width, frame.height / 8f), $"FPS {fps}", style);
+            GUI.Label(new Rect(frame.x + frame.width * 0.39f, frame.y + frame.height * 0.095f, frame.width, frame.height / 8f), $"FPS {fps}", style);
         }
     }
 }

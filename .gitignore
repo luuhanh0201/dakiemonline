@@ -21,6 +21,9 @@ obj/
 *.user
 TestResults/
 
+# Private runtime used to start the web server without a machine-wide .NET install
+.runtime/
+
 # Secrets
 .env
 *.keystore

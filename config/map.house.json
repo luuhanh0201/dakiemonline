@@ -1,6 +1,7 @@
 {
   "version": 1,
   "id": "map.house",
+  "name": "Nhà",
   "status": "DE_XUAT",
   "source": "KICH-BAN-CAC-MAP muc 5 (M01 Nha): nha rieng, khong boss; bo cuc theo anh mau docs/map-nha/anh-mau.png ban duyet 13/11/2026. Nha noi dai them mot goc trong ben phai cua de nut khong che cua (ban yeu cau 13/11/2026): anh 2067x941 rong 14.83 don vi, 139.33 px moi don vi, san o y 715",
   "spawnX": 5.4,
@@ -13,5 +14,8 @@
   ],
   "doors": [
     { "id": "door.yard", "name": "Ra ngoài", "x": 10.8, "reach": 0.8, "toMap": "map.village", "toX": 2.7, "walk": false }
+  ],
+  "npcs": [
+    { "id": "npc.su_phu", "name": "Sư phụ", "x": 4.05, "greeting": "Ra sân tập đánh người rơm cho quen tay đã, con." }
   ]
 }

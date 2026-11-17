@@ -4,12 +4,14 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $target = Join-Path $root 'client/Assets/Plugins/Game.Rules'
 $configTarget = Join-Path $root 'client/Assets/StreamingAssets/config'
+$buildDotnet = Join-Path $root '.runtime/sdk/dotnet.exe'
+if (-not (Test-Path -LiteralPath $buildDotnet)) { $buildDotnet = 'dotnet' }
 
 New-Item -ItemType Directory -Force -Path $target | Out-Null
 
 foreach ($name in 'Game.Rules', 'Game.Net') {
     $project = Join-Path $root "src/$name/$name.csproj"
-    dotnet build $project -c Release --nologo -v quiet
+    & $buildDotnet build $project -c Release --nologo -v quiet
     if ($LASTEXITCODE -ne 0) { throw "$name build failed." }
 
     $output = Join-Path $root "src/$name/bin/Release/netstandard2.1"

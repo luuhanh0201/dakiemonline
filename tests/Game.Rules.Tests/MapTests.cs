@@ -79,6 +79,25 @@ namespace Game.Rules.Tests
         }
 
         [Fact]
+        public void EachMapHasTheNameTheHudShows()
+        {
+            Assert.Equal("Bãi thử", config.Maps[Test].Name);
+            Assert.Equal("Nhà", HouseMap.Name);
+            Assert.Equal("Làng", config.Maps[Village].Name);
+        }
+
+        [Fact]
+        public void AMapWithoutANameIsRefused()
+        {
+            Dictionary<string, string> files = TestConfig.Files();
+            files[GameConfig.HouseFile] = files[GameConfig.HouseFile].Replace("\"name\": \"Nhà\"", "\"name\": \"  \"");
+
+            var error = Assert.Throws<InvalidConfigException>(() => GameConfig.Parse(files));
+
+            Assert.Contains("name", error.Message);
+        }
+
+        [Fact]
         public void TwoMapsWithOneIdAreRefused()
         {
             Dictionary<string, string> files = TestConfig.Files();

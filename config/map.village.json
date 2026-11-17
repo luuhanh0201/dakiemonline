@@ -1,6 +1,7 @@
 {
   "version": 1,
   "id": "map.village",
+  "name": "Làng",
   "status": "DE_XUAT",
   "source": "KICH-BAN-CAC-MAP muc 6 (M02 khu luyen tap ngoai lang); bo cuc theo anh tong quat docs/map-lang/lang-tong-quat-3.png va docs/KE-HOACH-MAP-LANG.md; 2 man hinh (24 don vi), 5 nguoi rom, 10 giay dung lai: ban chot 13/11/2026; 100 HP, moi don tru 10, het mau thi nga: ban doi 13/11/2026 (truoc la 1 phat nga); kich thuoc nguoi rom va vi tri la de xuat",
   "spawnX": 3.3,
@@ -14,6 +15,10 @@
   ],
   "doors": [
     { "id": "door.house", "name": "Vào nhà", "x": 2.7, "reach": 0.7, "toMap": "map.house", "toX": 10.4, "walk": false }
+  ],
+  "npcs": [
+    { "id": "npc.lam", "name": "Sư cô Lam", "x": 5.55, "greeting": "Muốn học kiếm pháp hệ Thủy thì phải có sách. Ta sẽ mở quầy sớm thôi." },
+    { "id": "npc.vu", "name": "Thương nhân Vũ", "x": 9.75, "greeting": "Đồ tốt giá phải chăng! Hàng đang về, ghé lại sau nhé." }
   ],
   "training": {
     "maxHp": 100,

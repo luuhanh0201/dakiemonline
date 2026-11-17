@@ -1,0 +1,42 @@
+﻿{
+    "source":  "nha-6-hieu-ung-cua",
+    "width":  1536,
+    "height":  1024,
+    "pieces":  [
+                   {
+                       "name":  "nha-6-hieu-ung-cua_01",
+                       "x":  84,
+                       "y":  416,
+                       "w":  177,
+                       "h":  175
+                   },
+                   {
+                       "name":  "nha-6-hieu-ung-cua_02",
+                       "x":  454,
+                       "y":  427,
+                       "w":  281,
+                       "h":  149
+                   },
+                   {
+                       "name":  "nha-6-hieu-ung-cua_03",
+                       "x":  777,
+                       "y":  416,
+                       "w":  220,
+                       "h":  158
+                   },
+                   {
+                       "name":  "nha-6-hieu-ung-cua_04",
+                       "x":  326,
+                       "y":  464,
+                       "w":  78,
+                       "h":  79
+                   },
+                   {
+                       "name":  "nha-6-hieu-ung-cua_05",
+                       "x":  1042,
+                       "y":  466,
+                       "w":  427,
+                       "h":  87
+                   }
+               ]
+}

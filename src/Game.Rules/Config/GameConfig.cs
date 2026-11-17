@@ -56,12 +56,14 @@ namespace Game.Rules
             PotionConfig potion,
             IReadOnlyList<GearItemConfig> gear,
             BagConfig bag,
-            BossConfig boss)
+            BossConfig boss,
+            AutoFightConfig autoFight)
         {
             Character = character;
             Movement = movement;
             Maps = maps;
             Skills = skills;
+            AutoFight = autoFight;
             Potion = potion;
             Gear = gear;
             Bag = bag;
@@ -106,6 +108,10 @@ namespace Game.Rules
             return -1;
         }
         public IReadOnlyList<SkillConfig> Skills { get; }
+
+        /// <summary>Fighting a pinned target on its own; read from the skills file.</summary>
+        public AutoFightConfig AutoFight { get; }
+
         public PotionConfig Potion { get; }
 
         /// <summary>The equipment catalog, in file order; an item travels as its place in this list.</summary>
@@ -124,16 +130,18 @@ namespace Game.Rules
             IReadOnlyList<GearItemConfig> gear = ParseGear(items);
             BagConfig bag = ParseBag(items, gear);
             items.RejectUnknownFields();
+            IReadOnlyList<SkillConfig> skills = ParseSkills(Open(files, SkillsFile), out AutoFightConfig autoFight);
 
             return new GameConfig(
                 ParseCharacter(Open(files, CharacterFile)),
                 ParseMovement(Open(files, MovementFile)),
                 ParseMaps(files),
-                ParseSkills(Open(files, SkillsFile)),
+                skills,
                 potion,
                 gear,
                 bag,
-                ParseBoss(Open(files, BossFile)));
+                ParseBoss(Open(files, BossFile)),
+                autoFight);
         }
 
         public SkillConfig Skill(SkillSlot slot) => Skills.First(skill => skill.Slot == slot);
@@ -258,6 +266,7 @@ namespace Game.Rules
                 {
                     Name = entry.String("name"),
                     Slot = Lookup(entry, "slot", GearSlots),
+                    Description = entry.Has("description") ? entry.String("description") : string.Empty,
                     Tier = PositiveInt(entry, "tier"),
                     Art = entry.String("art"),
                     Default = entry.Has("default") && entry.Boolean("default"),
@@ -488,11 +497,19 @@ namespace Game.Rules
         {
             var map = new MapConfig();
             ReadEntry(root, map);
+            map.Name = root.String("name");
+
+            if (map.Name.Trim().Length == 0)
+            {
+                throw root.Fail("name", "cannot be empty");
+            }
+
             map.SpawnX = root.Has("spawnX") ? root.Double("spawnX") : (double?)null;
             map.Boss = root.Boolean("boss");
             map.Shared = root.Boolean("shared");
             map.Boxes = ParseBoxes(root);
             map.Doors = ParseDoors(root);
+            map.Npcs = root.Has("npcs") ? ParseNpcs(root) : Array.Empty<MapNpc>();
             map.Training = root.Has("training") ? ParseTraining(root.Object("training")) : null;
             root.RejectUnknownFields();
             return map;
@@ -539,6 +556,38 @@ namespace Game.Rules
             training.Dummies = dummies;
             item.RejectUnknownFields();
             return training;
+        }
+
+        private static IReadOnlyList<MapNpc> ParseNpcs(ConfigObject root)
+        {
+            var ids = new HashSet<string>();
+            var npcs = new List<MapNpc>();
+
+            foreach (ConfigObject item in root.Array("npcs"))
+            {
+                var npc = new MapNpc
+                {
+                    Id = ReadId(item),
+                    Name = item.String("name"),
+                    X = item.Double("x"),
+                    Greeting = item.String("greeting"),
+                };
+
+                if (!ids.Add(npc.Id))
+                {
+                    throw item.Fail("id", $"duplicate id '{npc.Id}'");
+                }
+
+                if (npc.Name.Trim().Length == 0 || npc.Greeting.Trim().Length == 0)
+                {
+                    throw item.Fail("name", "an NPC needs a name and a greeting");
+                }
+
+                item.RejectUnknownFields();
+                npcs.Add(npc);
+            }
+
+            return npcs;
         }
 
         private static IReadOnlyList<MapDoor> ParseDoors(ConfigObject root)
@@ -611,7 +660,7 @@ namespace Game.Rules
             return boxes.Count > 0 ? boxes : throw root.Fail("boxes", "needs at least one box");
         }
 
-        private static IReadOnlyList<SkillConfig> ParseSkills(ConfigObject root)
+        private static IReadOnlyList<SkillConfig> ParseSkills(ConfigObject root, out AutoFightConfig autoFight)
         {
             var ids = new HashSet<string>();
             var slots = new HashSet<SkillSlot>();
@@ -634,8 +683,6 @@ namespace Game.Rules
                 skills.Add(skill);
             }
 
-            root.RejectUnknownFields();
-
             foreach (SkillSlot slot in Slots.Values)
             {
                 if (slots.Contains(slot) == false)
@@ -644,6 +691,15 @@ namespace Game.Rules
                 }
             }
 
+            ConfigObject auto = root.Object("autoFight");
+            autoFight = new AutoFightConfig
+            {
+                MaxCooldownSec = auto.Positive("maxCooldownSec"),
+                RangedStandOff = auto.Positive("rangedStandOff"),
+            };
+            ReadEntry(auto, autoFight);
+            auto.RejectUnknownFields();
+            root.RejectUnknownFields();
             return skills;
         }
 

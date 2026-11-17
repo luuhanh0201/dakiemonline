@@ -26,6 +26,19 @@ namespace DaKiem.Client
         private bool potionPressed;
         private SkillSlot? skillPressed;
         private bool replayPressed;
+        private bool portraitTouched;
+
+        // A touch on the world, and whether it was the second of a quick pair on the same spot.
+        private const float DoubleTouchSeconds = 0.35f;
+        private const float DoubleTouchDp = 30f;
+        private bool worldTouched;
+        private bool worldTouchedTwice;
+        private Vector2 worldTouch;
+        private float lastWorldTouchTime = -10f;
+        private Vector2 lastWorldTouch;
+
+        // A skill square touched: it chooses the skill the attack button casts (decided 14/11/2026).
+        private SkillSlot? squareTouched;
 #if UNITY_STANDALONE || UNITY_WEBGL
         private GearSlot? gearPressed;
         private bool slashStylePressed;
@@ -49,6 +62,8 @@ namespace DaKiem.Client
 
         public double MoveX { get; private set; }
         public double MoveY { get; private set; }
+
+        public bool WorldInputBlocked { get; set; }
 
         public void Update()
         {
@@ -117,6 +132,35 @@ namespace DaKiem.Client
         }
 #endif
 
+        /// <summary>
+        /// A touch on the world since the last call, once: where it was and whether it was the second of a
+        /// quick pair on the same spot.
+        /// </summary>
+        public bool ConsumeWorldTouch(out Vector2 screen, out bool twice)
+        {
+            screen = worldTouch;
+            twice = worldTouchedTwice;
+            bool touched = worldTouched;
+            worldTouched = false;
+            return touched;
+        }
+
+        /// <summary>The skill whose square was touched since the last call, once; null when none was.</summary>
+        public SkillSlot? ConsumeSquareTouched()
+        {
+            SkillSlot? slot = squareTouched;
+            squareTouched = null;
+            return slot;
+        }
+
+        /// <summary>Whether the portrait was touched since the last call, once: it opens the main menu.</summary>
+        public bool ConsumePortrait()
+        {
+            bool touched = portraitTouched;
+            portraitTouched = false;
+            return touched;
+        }
+
         public bool ConsumeReplay()
         {
             bool pressed = replayPressed;
@@ -140,29 +184,71 @@ namespace DaKiem.Client
                 return;
             }
 
-            bool onLeftHalf = touch.screenPosition.x < GameFrame.Pixels.center.x;
-
-            if (onLeftHalf)
+            if (hud.PortraitAt(touch.screenPosition))
             {
-                if (joystickFinger == NoFinger)
+                portraitTouched = true;
+                return;
+            }
+
+            // An NPC's words close at any touch.
+            if (hud.DialogVisible)
+            {
+                hud.HideDialog();
+                return;
+            }
+
+            if (WorldInputBlocked)
+            {
+                return;
+            }
+
+            // Buttons reach across the screen now that the skills sit in the bottom centre.
+            HudButton button = hud.ButtonAt(touch.screenPosition);
+
+            if (button != HudButton.None)
+            {
+                // A skill square only chooses; the attack button casts what is chosen.
+                SkillSlot? square = button == HudButton.Attack ? null : HudLayout.SlotOf(button);
+
+                if (square != null)
                 {
-                    joystickFinger = touch.finger.index;
-                    joystickOrigin = touch.screenPosition;
-                    hud.ShowJoystick(true, joystickOrigin, Vector2.zero);
+                    hud.Flash(button);
+                    squareTouched = square;
+                }
+                else
+                {
+                    PressButton(button);
                 }
 
                 return;
             }
 
-            HudButton button = hud.ButtonAt(touch.screenPosition);
+            // The joystick is fixed: only a touch on or near its ring takes it, and it pushes from the centre.
+            Vector2 rest = HudView.JoystickRestScreen;
+            float reach = HudLayout.JoystickDiameterDp / 2f * HudLayout.JoystickReach * HudLayout.DpToPixels;
 
-            if (button == HudButton.None)
+            if (Vector2.Distance(touch.screenPosition, rest) <= reach)
             {
+                if (joystickFinger == NoFinger)
+                {
+                    joystickFinger = touch.finger.index;
+                    joystickOrigin = rest;
+                    MoveTouch(touch);
+                }
+
                 return;
             }
 
-            PressButton(button);
+            // Anywhere else is the world: a dummy, an NPC, or empty ground.
+            float near = DoubleTouchDp * HudLayout.DpToPixels;
+            worldTouchedTwice = Time.unscaledTime - lastWorldTouchTime <= DoubleTouchSeconds
+                && Vector2.Distance(touch.screenPosition, lastWorldTouch) <= near;
+            worldTouched = true;
+            worldTouch = touch.screenPosition;
+            lastWorldTouch = touch.screenPosition;
+            lastWorldTouchTime = worldTouchedTwice ? -10f : Time.unscaledTime;
         }
+
 
         private void PressButton(HudButton button)
         {

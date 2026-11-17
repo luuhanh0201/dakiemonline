@@ -33,7 +33,10 @@ public static class ServerApp
         ServerConfig serverConfig = GameConfig.ParseServer(File.ReadAllText(Path.Combine(configDir, GameConfig.ServerFile)));
         TimeSpan fakeDelay = TimeSpan.FromMilliseconds(double.Parse(builder.Configuration["fake-latency-ms"] ?? "0"));
 
-        AccountConfig accountConfig = GameConfig.ParseAccounts(File.ReadAllText(Path.Combine(configDir, GameConfig.AccountsFile)));
+        string accountsText = File.ReadAllText(Path.Combine(configDir, GameConfig.AccountsFile));
+        AccountConfig accountConfig = GameConfig.ParseAccounts(accountsText);
+        var contentRules = new Dictionary<string, string>(files) { [GameConfig.AccountsFile] = accountsText };
+        string rulesHash = Game.Net.ContentRules.Fingerprint(contentRules);
         DatabaseInfo database = AddDatabase(builder, args);
         builder.Services.AddSingleton(services => new GameServer(
             config,
@@ -62,6 +65,7 @@ public static class ServerApp
             services.GetRequiredService<TimeProvider>()));
         WebApplication app = builder.Build();
         GameServer server = app.Services.GetRequiredService<GameServer>();
+        server.ContentRulesHash = rulesHash;
         ICharacterStore characters = app.Services.GetRequiredService<ICharacterStore>();
         app.Logger.LogInformation(
             "Characters are kept in {Kind}{Where}",
@@ -98,6 +102,7 @@ public static class ServerApp
 
         app.MapGet("/status",async (CancellationToken cancel) => Results.Json(new
         {
+            rulesHash,
             players = server.SessionCount,
             channels = server.Runners.Select(runner => new
             {
@@ -171,6 +176,8 @@ public static class ServerApp
         var types = new FileExtensionContentTypeProvider();
         types.Mappings[".data"] = "application/octet-stream";
         types.Mappings[".wasm"] = "application/wasm";
+        types.Mappings[".apk"] = "application/vnd.android.package-archive";
+        types.Mappings[".bin"] = "application/octet-stream";
         types.Mappings[".symbols.json"] = "application/octet-stream";
         var files = new PhysicalFileProvider(Path.GetFullPath(webDir));
         app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = files });

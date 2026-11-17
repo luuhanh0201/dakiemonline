@@ -192,7 +192,7 @@ namespace Game.Rules.Tests
         }
 
         [Fact]
-        public void TheWeatherHoldsBetweenTheConfiguredTimesAndIsOneOfFourKinds()
+        public void TheWeatherHoldsBetweenTheConfiguredTimesAndIsClearRainOrWindButNeverFog()
         {
             var weather = new WeatherState(3, 480d, 900d);
             int held = 0;
@@ -215,7 +215,8 @@ namespace Game.Rules.Tests
                 Assert.InRange(weather.TicksLeft, Ticks.FromSeconds(480d), Ticks.FromSeconds(900d));
             }
 
-            Assert.Equal(4, seen.Count);
+            Assert.Equal(3, seen.Count);
+            Assert.DoesNotContain(Weather.Fog, seen);
             Assert.True(held > 0);
         }
 

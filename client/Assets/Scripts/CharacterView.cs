@@ -293,7 +293,7 @@ namespace DaKiem.Client
             rig = new GameObject("Rig").transform;
             rig.SetParent(root, false);
 
-            Sprite frontImage = Resources.Load<Sprite>(FrontSprite);
+            Sprite frontImage = DaKiem.Client.Content.ContentAssets.Load<Sprite>(FrontSprite);
             float frontWidth = FrontHeightUnits * frontImage.texture.width / frontImage.texture.height;
             front = new FrontFigure("FrontFigure", root, frontWidth, FrontHeightUnits, Vector2.one);
             front.AddLayer("body", frontImage.texture, FrontOrder);
@@ -1124,7 +1124,7 @@ namespace DaKiem.Client
 
             if (bone.Name == CharacterRig.Hip)
             {
-                shorts = new SkinnedShorts(Resources.Load<Sprite>(SpriteFolder + bone.Sprite), joint,
+                shorts = new SkinnedShorts(DaKiem.Client.Content.ContentAssets.Load<Sprite>(SpriteFolder + bone.Sprite), joint,
                     ToLocal(bone.CentreX - bone.JointX, bone.CentreY - bone.JointY), bone.Order);
                 return;
             }
@@ -1134,8 +1134,13 @@ namespace DaKiem.Client
             part.transform.localPosition = ToLocal(bone.CentreX - bone.JointX, bone.CentreY - bone.JointY);
 
             var renderer = part.AddComponent<SpriteRenderer>();
-            renderer.sprite = Resources.Load<Sprite>(SpriteFolder + bone.Sprite);
+            renderer.sprite = DaKiem.Client.Content.ContentAssets.Load<Sprite>(SpriteFolder + bone.Sprite);
             renderer.sharedMaterial = partMaterial;
+            // Explicit per-part texture also works for cameras rendered immediately by UI reviews.
+            // Otherwise a shared material can retain the preceding part's texture on the first render.
+            var properties = new MaterialPropertyBlock();
+            properties.SetTexture("_MainTex", renderer.sprite.texture);
+            renderer.SetPropertyBlock(properties);
             renderer.sortingOrder = bone.Order;
             parts.Add(new ShadedPart(renderer, ShadeOf(bone.Name)));
 
@@ -1148,7 +1153,7 @@ namespace DaKiem.Client
         private void CreateLimb(in CharacterLimb limb)
         {
             CharacterBone parent = FindBone(limb.Parent);
-            Sprite sprite = Resources.Load<Sprite>(SpriteFolder + limb.Sprite);
+            Sprite sprite = DaKiem.Client.Content.ContentAssets.Load<Sprite>(SpriteFolder + limb.Sprite);
 
             limbs[limb.Name] = new LimbStrip(sprite, joints[limb.Parent], limb.Order, limb.Name, ShadeOf(limb.Name));
             shapes[limb.Name] = new LimbShape(

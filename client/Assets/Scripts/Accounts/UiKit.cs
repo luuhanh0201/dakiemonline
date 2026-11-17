@@ -28,20 +28,21 @@ namespace DaKiem.Client.Accounts
         public static readonly Color ErrorText = new Color32(0xFF, 0x6B, 0x6B, 0xFF);
 
         private static readonly Dictionary<string, Sprite> Sprites = new Dictionary<string, Sprite>();
+        internal static void ClearArtCache() => Sprites.Clear();
         private static Font font;
         private static Font boldFont;
 
         /// <summary>Be Vietnam Pro (SIL OFL, docs/ASSETS.md); the web build has no system font to fall back on.</summary>
-        public static Font Font => font != null ? font : font = Resources.Load<Font>("Fonts/BeVietnamPro-Regular") ?? Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        public static Font Font => font != null ? font : font = DaKiem.Client.Content.ContentAssets.Load<Font>("Fonts/BeVietnamPro-Regular") ?? Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
 
-        public static Font BoldFont => boldFont != null ? boldFont : boldFont = Resources.Load<Font>("Fonts/BeVietnamPro-Bold") ?? Font;
+        public static Font BoldFont => boldFont != null ? boldFont : boldFont = DaKiem.Client.Content.ContentAssets.Load<Font>("Fonts/BeVietnamPro-Bold") ?? Font;
 
         /// <summary>A sprite from Resources/UI, loaded once.</summary>
         public static Sprite Art(string name)
         {
             if (!Sprites.TryGetValue(name, out Sprite sprite))
             {
-                sprite = Resources.Load<Sprite>("UI/" + name);
+                sprite = DaKiem.Client.Content.ContentAssets.Load<Sprite>("UI/" + name);
                 Sprites[name] = sprite;
 
                 if (sprite == null)

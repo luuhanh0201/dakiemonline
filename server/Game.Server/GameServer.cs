@@ -40,6 +40,7 @@ public sealed class GameServer
     public GameConfig Config { get; }
     public ServerConfig Server { get; }
     public bool RequireLogin { get; }
+    public string ContentRulesHash { get; set; } = "";
     public IReadOnlyList<ChannelRunner> Runners { get; }
     public InventoryService Inventory { get; }
 

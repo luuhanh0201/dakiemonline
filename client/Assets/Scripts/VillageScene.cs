@@ -26,7 +26,6 @@ namespace DaKiem.Client
         private const int MountainOrder = -150;
         private const int HillOrder = -140;
         private const int TreeOrder = -120;
-        private const int FogBackOrder = -110;
         private const int FenceOrder = -60;
         private const int BuildingOrder = -40;
         private const int PropOrder = -35;
@@ -34,7 +33,6 @@ namespace DaKiem.Client
         private const int DummyOrder = -4;
         private const int RainOrder = 40;
         private const int FrontOrder = 60;
-        private const int FogFrontOrder = 65;
         private const int NightOrder = 80;
         private const int LitOrder = 90;
         private const int HealthOrder = 95;
@@ -181,7 +179,7 @@ namespace DaKiem.Client
                 }
             }
 
-            weather = new WeatherPainter(root, camera, RainOrder, FogBackOrder, FogFrontOrder, CloudOrder);
+            weather = new WeatherPainter(root, camera, RainOrder, CloudOrder);
             night = Block("Night shade", NightOrder);
         }
 
@@ -304,7 +302,7 @@ namespace DaKiem.Client
             return renderer;
         }
 
-        internal static Sprite Load(string art) => Resources.Load<Sprite>(Folder + art);
+        internal static Sprite Load(string art) => DaKiem.Client.Content.ContentAssets.Load<Sprite>(Folder + art);
 
         /// <summary>Frames named prefix1, prefix2, … in order, as many as there are.</summary>
         internal static Sprite[] Frames(string prefix)
@@ -313,7 +311,7 @@ namespace DaKiem.Client
 
             for (int number = 1; ; number++)
             {
-                Sprite frame = Resources.Load<Sprite>($"{Folder}{prefix}{number}");
+                Sprite frame = DaKiem.Client.Content.ContentAssets.Load<Sprite>($"{Folder}{prefix}{number}");
 
                 if (frame == null)
                 {
@@ -360,34 +358,31 @@ namespace DaKiem.Client
         }
 
         /// <summary>
-        /// The sky in flat bands, coloured for the hour: blue by day, purple and orange at dawn and dusk,
-        /// deep blue at night with the moon and twinkling stars. Drawn in code so it changes smoothly.
+        /// The sky from three drawn pictures, day, dusk and night, fading into each other with the hour; the
+        /// drawn sun and moon cross it in a low arc and the drawn stars twinkle at night.
         /// </summary>
         private sealed class SkyPainter
         {
-            private static readonly Color[] Day = { Hex(0x3E7FE0), Hex(0x5592E8), Hex(0x72A9EE), Hex(0x96C3F3), Hex(0xBEDDF8) };
-            private static readonly Color[] Dusk = { Hex(0x4B3A96), Hex(0x7D4CAE), Hex(0xC2639F), Hex(0xEE8676), Hex(0xF7B566) };
-            private static readonly Color[] Night = { Hex(0x0A0F2C), Hex(0x111840), Hex(0x1A2256), Hex(0x252D68), Hex(0x343A7A) };
-            private static readonly Color Rain = Hex(0x6F7C8E);
+            private const float SunSize = 1.1f;
+            private const float MoonSize = 0.95f;
+            private const float StarSize = 0.16f;
+            private static readonly Color Rain = Hex(0x8C96A6);
 
-            private readonly SpriteRenderer[] bands = new SpriteRenderer[5];
+            private readonly SpriteRenderer day;
+            private readonly SpriteRenderer dusk;
+            private readonly SpriteRenderer night;
             private readonly SpriteRenderer sun;
             private readonly SpriteRenderer moon;
             private readonly List<(SpriteRenderer Star, Vector2 At, float Phase)> stars = new List<(SpriteRenderer, Vector2, float)>();
 
             public SkyPainter(Transform root)
             {
-                Sprite square = Square();
-
-                for (int index = 0; index < bands.Length; index++)
-                {
-                    bands[index] = Renderer(root, "Sky band", square, SkyOrder + index);
-                }
-
-                Sprite disc = Disc();
-                sun = Renderer(root, "Sun", disc, SunOrder);
-                moon = Renderer(root, "Moon", disc, SunOrder);
-                Sprite star = Resources.Load<Sprite>("World/Door/star");
+                day = Renderer(root, "Sky day", Load("Sky/day"), SkyOrder);
+                dusk = Renderer(root, "Sky dusk", Load("Sky/dusk"), SkyOrder + 1);
+                night = Renderer(root, "Sky night", Load("Sky/night"), SkyOrder + 2);
+                sun = Renderer(root, "Sun", Load("Sky/sun"), SunOrder);
+                moon = Renderer(root, "Moon", Load("Sky/moon"), SunOrder);
+                Sprite star = Load("Sky/star");
                 var random = new System.Random(11);
 
                 for (int index = 0; index < 40 && star != null; index++)
@@ -398,31 +393,18 @@ namespace DaKiem.Client
 
             public void Paint(Vector3 eye, float width, float height, float hour, float dark, Weather weather)
             {
-                float dusk = 1f - Mathf.Abs(dark * 2f - 1f);
-                float top = eye.y + height / 2f;
-                float bandHeight = height / bands.Length;
-
-                for (int index = 0; index < bands.Length; index++)
-                {
-                    Color colour = dark < 0.5f ? Color.Lerp(Day[index], Dusk[index], dark * 2f) : Color.Lerp(Dusk[index], Night[index], dark * 2f - 1f);
-
-                    if (weather == Weather.Rain || weather == Weather.Fog)
-                    {
-                        colour = Color.Lerp(colour, Rain * (1f - dark * 0.7f), weather == Weather.Rain ? 0.6f : 0.4f);
-                        colour.a = 1f;
-                    }
-
-                    SpriteRenderer band = bands[index];
-                    band.color = colour;
-                    band.transform.position = new Vector3(eye.x, top - bandHeight * (index + 0.5f), 0f);
-                    band.transform.localScale = new Vector3(width + 2f, bandHeight + 0.02f, 1f);
-                }
+                // Day lies under dusk, dusk under night: by day only day shows, at dusk it is covered by
+                // dusk, and night fades in over dusk. Rain greys whichever shows.
+                Color tint = weather == Weather.Rain ? Color.Lerp(Color.white, Rain, 0.6f) : Color.white;
+                Cover(day, eye, width, height, tint, dark < 0.5f ? 1f : 0f);
+                Cover(dusk, eye, width, height, tint, Mathf.Clamp01(dark * 2f));
+                Cover(night, eye, width, height, tint, Mathf.Clamp01(dark * 2f - 1f));
 
                 // The sun crosses from 6:00 to 18:00 and the moon from 18:00 to 6:00, in a low arc.
                 float sunArc = Mathf.InverseLerp(6f, 18f, hour);
                 float moonArc = Mathf.Repeat(hour - 18f, 24f) / 12f;
-                Place(sun, eye, width, height, sunArc, 0.55f, Hex(0xFFE27A), hour >= 6f && hour < 18.5f && weather != Weather.Rain);
-                Place(moon, eye, width, height, moonArc, 0.5f, Hex(0xF4EED2), dark > 0.4f && weather != Weather.Rain);
+                Place(sun, eye, width, height, sunArc, SunSize, hour >= 6f && hour < 18.5f && weather != Weather.Rain);
+                Place(moon, eye, width, height, moonArc, MoonSize, dark > 0.4f && weather != Weather.Rain);
 
                 float clear = weather == Weather.Clear || weather == Weather.Wind ? 1f : 0.25f;
 
@@ -431,18 +413,41 @@ namespace DaKiem.Client
                     float twinkle = 0.55f + 0.45f * Mathf.Sin(Time.time * 2.1f + phase);
                     star.color = new Color(1f, 1f, 1f, Mathf.Clamp01(dark * 1.4f - 0.4f) * twinkle * clear);
                     star.transform.position = new Vector3(eye.x - width / 2f + at.x * width, eye.y - height / 2f + at.y * height, 0f);
-                    star.transform.localScale = Vector3.one * (0.09f / star.sprite.bounds.size.x) * (0.7f + 0.3f * twinkle);
+                    star.transform.localScale = Vector3.one * (StarSize / star.sprite.bounds.size.x) * (0.7f + 0.3f * twinkle);
                 }
             }
 
-            private static void Place(SpriteRenderer body, Vector3 eye, float width, float height, float arc, float size, Color colour, bool shown)
+            /// <summary>Stretches a sky picture over the whole view, keeping its shape, at the given opacity.</summary>
+            private static void Cover(SpriteRenderer layer, Vector3 eye, float width, float height, Color tint, float alpha)
             {
-                body.enabled = shown;
+                if (layer.sprite == null)
+                {
+                    layer.enabled = false;
+                    return;
+                }
+
+                layer.enabled = alpha > 0.001f;
+                Vector2 size = layer.sprite.bounds.size;
+                float scale = Mathf.Max((width + 0.5f) / size.x, (height + 0.5f) / size.y);
+                layer.transform.position = new Vector3(eye.x, eye.y, 0f);
+                layer.transform.localScale = new Vector3(scale, scale, 1f);
+                tint.a = alpha;
+                layer.color = tint;
+            }
+
+            private static void Place(SpriteRenderer body, Vector3 eye, float width, float height, float arc, float size, bool shown)
+            {
+                body.enabled = shown && body.sprite != null;
+
+                if (!body.enabled)
+                {
+                    return;
+                }
+
                 float x = eye.x - width * 0.4f + arc * width * 0.8f;
                 float y = eye.y + height * (0.18f + 0.22f * Mathf.Sin(arc * Mathf.PI));
                 body.transform.position = new Vector3(x, y, 0f);
-                body.transform.localScale = Vector3.one * size;
-                body.color = colour;
+                body.transform.localScale = Vector3.one * (size / body.sprite.bounds.size.x);
             }
 
             private static SpriteRenderer Renderer(Transform root, string name, Sprite sprite, int order)
@@ -453,33 +458,6 @@ namespace DaKiem.Client
                 renderer.sprite = sprite;
                 renderer.sortingOrder = order;
                 return renderer;
-            }
-
-            private static Sprite Square()
-            {
-                Texture2D texture = Texture2D.whiteTexture;
-                return UnityEngine.Sprite.Create(texture, new Rect(0f, 0f, texture.width, texture.height), new Vector2(0.5f, 0.5f), texture.width);
-            }
-
-            /// <summary>A flat disc with a slightly darker rim, one unit across.</summary>
-            private static Sprite Disc()
-            {
-                const int size = 64;
-                var texture = new Texture2D(size, size, TextureFormat.RGBA32, false) { filterMode = FilterMode.Bilinear };
-
-                for (int y = 0; y < size; y++)
-                {
-                    for (int x = 0; x < size; x++)
-                    {
-                        float d = Vector2.Distance(new Vector2(x + 0.5f, y + 0.5f), new Vector2(size / 2f, size / 2f)) / (size / 2f);
-                        float alpha = Mathf.Clamp01((1f - d) * size / 2f);
-                        float rim = d > 0.86f ? 0.85f : 1f;
-                        texture.SetPixel(x, y, new Color(rim, rim, rim, alpha));
-                    }
-                }
-
-                texture.Apply();
-                return UnityEngine.Sprite.Create(texture, new Rect(0f, 0f, size, size), new Vector2(0.5f, 0.5f), size);
             }
 
             private static Color Hex(int rgb) => new Color(((rgb >> 16) & 255) / 255f, ((rgb >> 8) & 255) / 255f, (rgb & 255) / 255f, 1f);
@@ -589,7 +567,7 @@ namespace DaKiem.Client
 
                 for (int number = 1; ; number++)
                 {
-                    Sprite frame = Resources.Load<Sprite>($"{prefix}{number}");
+                    Sprite frame = DaKiem.Client.Content.ContentAssets.Load<Sprite>($"{prefix}{number}");
 
                     if (frame == null)
                     {
@@ -810,7 +788,7 @@ namespace DaKiem.Client
         }
 
         /// <summary>
-        /// The weather drawn over the village: rain streaks and splashes, drifting fog, leaves and petals
+        /// The weather drawn over the village: rain streaks and splashes, leaves and petals
         /// blown along by the wind, and clouds crossing the sky. The pieces are flat drawings; their motion is here.
         /// </summary>
         private sealed class WeatherPainter
@@ -821,20 +799,17 @@ namespace DaKiem.Client
 
             private readonly Sprite[] rain = Frames("Weather/rain_");
             private readonly Sprite[] splash = Frames("Weather/splash_");
-            private readonly Sprite[] fog = Frames("Weather/fog_");
             private readonly Sprite[] leaf = Frames("Weather/leaf_");
             private readonly Sprite[] petal = Frames("Weather/petal_");
             private readonly Sprite[] cloud = Frames("Weather/cloud_");
             private readonly List<(SpriteRenderer Renderer, Vector2 Seed)> drops = new List<(SpriteRenderer, Vector2)>();
             private readonly List<(SpriteRenderer Renderer, Vector2 Seed)> splashes = new List<(SpriteRenderer, Vector2)>();
             private readonly List<(SpriteRenderer Renderer, Vector2 Seed, bool Petal)> leaves = new List<(SpriteRenderer, Vector2, bool)>();
-            private readonly List<(SpriteRenderer Renderer, float Seed, float Height)> fogs = new List<(SpriteRenderer, float, float)>();
             private readonly List<(SpriteRenderer Renderer, float Seed, float Height)> clouds = new List<(SpriteRenderer, float, float)>();
             private float rainAmount;
-            private float fogAmount;
             private float windAmount;
 
-            public WeatherPainter(Transform root, Camera camera, int rainOrder, int fogBackOrder, int fogFrontOrder, int cloudOrder)
+            public WeatherPainter(Transform root, Camera camera, int rainOrder, int cloudOrder)
             {
                 var random = new System.Random(5);
 
@@ -854,11 +829,6 @@ namespace DaKiem.Client
                     leaves.Add((Make(root, isPetal ? petal[0] : leaf[0], rainOrder), new Vector2((float)random.NextDouble(), (float)random.NextDouble()), isPetal));
                 }
 
-                for (int index = 0; index < 4 && fog.Length > 0; index++)
-                {
-                    fogs.Add((Make(root, fog[index % fog.Length], index % 2 == 0 ? fogBackOrder : fogFrontOrder), (float)random.NextDouble(), 0.4f + index * 0.55f));
-                }
-
                 for (int index = 0; index < 5 && cloud.Length > 0; index++)
                 {
                     clouds.Add((Make(root, cloud[index % cloud.Length], cloudOrder), (float)random.NextDouble(), 0.62f + 0.07f * (index % 3)));
@@ -870,7 +840,6 @@ namespace DaKiem.Client
                 // Each kind fades in and out over a few seconds instead of switching at once.
                 float fade = frameSeconds / 3f;
                 rainAmount = Mathf.MoveTowards(rainAmount, now == Weather.Rain ? 1f : 0f, fade);
-                fogAmount = Mathf.MoveTowards(fogAmount, now == Weather.Fog ? 1f : 0f, fade);
                 windAmount = Mathf.MoveTowards(windAmount, now == Weather.Wind ? 1f : 0f, fade);
 
                 float left = eye.x - width / 2f;
@@ -919,17 +888,7 @@ namespace DaKiem.Client
                     renderer.color = new Color(night, night, night, amount);
                 }
 
-                foreach ((SpriteRenderer renderer, float seed, float h) in fogs)
-                {
-                    float w = width * 1.4f;
-                    float drift = Mathf.Repeat(time * 0.08f + seed, 1f);
-                    renderer.enabled = fogAmount > 0.01f;
-                    renderer.transform.position = new Vector3(left - w * 0.2f + drift * width * 0.4f + w / 2f - width * 0.2f, h, 0f);
-                    renderer.transform.localScale = new Vector3(w / renderer.sprite.bounds.size.x, 1.1f / renderer.sprite.bounds.size.y, 1f);
-                    renderer.color = new Color(night, night, night * 1.02f, 0.55f * fogAmount);
-                }
-
-                float cover = 0.55f + 0.45f * Mathf.Max(rainAmount, fogAmount);
+                float cover = 0.55f + 0.45f * rainAmount;
 
                 foreach ((SpriteRenderer renderer, float seed, float share) in clouds)
                 {

@@ -17,13 +17,13 @@ $env:TMP = $buildTemp
 $env:JAVA_TOOL_OPTIONS = "-Djdk.net.unixdomain.tmpdir=$buildTemp -Djava.io.tmpdir=$buildTemp"
 
 $arguments = @(
-    '-batchmode', '-nographics', '-buildTarget', 'Android',
+    '-batchmode', '-buildTarget', 'Android',
     '-projectPath', "`"$(Join-Path $root 'client')`"",
     '-executeMethod', 'DaKiem.Client.Editor.AndroidBuild.Run',
     '-logFile', "`"$LogFile`""
 )
 
-$process = Start-Process -FilePath $Unity -ArgumentList $arguments -Wait -PassThru
+$process = Start-Process -FilePath $Unity -ArgumentList $arguments -WindowStyle Hidden -Wait -PassThru
 if ($process.ExitCode -ne 0) { throw "Android build failed, see $LogFile" }
 
 Write-Output "Built $(Join-Path $root 'client/Builds/Android/DaKiemOnline.apk')"

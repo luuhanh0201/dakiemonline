@@ -2,6 +2,8 @@ using UnityEditor;
 using UnityEditor.Build;
 using UnityEditor.Build.Reporting;
 using UnityEngine;
+using System.IO;
+using DaKiem.Client.Accounts;
 
 namespace DaKiem.Client.Editor
 {
@@ -12,6 +14,7 @@ namespace DaKiem.Client.Editor
         public static void Run()
         {
             ApplyPlayerSettings();
+            ContentBuild.ExportBaseline();
             AssetDatabase.SaveAssets();
 
             BuildReport report = BuildPipeline.BuildPlayer(new BuildPlayerOptions
@@ -28,6 +31,11 @@ namespace DaKiem.Client.Editor
 
         private static void ApplyPlayerSettings()
         {
+            AppIconSettings.Apply();
+            var release = JsonUtility.FromJson<AndroidReleaseInfo>(File.ReadAllText(Path.Combine(Application.dataPath, "../../config/android-release.json")));
+            if (!release.IsUpdateFor(1, "com.dakiemonline.game")) throw new BuildFailedException("Invalid Android release settings.");
+            PlayerSettings.bundleVersion = release.versionName;
+            PlayerSettings.Android.bundleVersionCode = release.versionCode;
             PlayerSettings.productName = "Dạ Kiếm Online";
             PlayerSettings.companyName = "Da Kiem Online";
             PlayerSettings.SetApplicationIdentifier(NamedBuildTarget.Android, "com.dakiemonline.game");

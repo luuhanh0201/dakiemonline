@@ -23,6 +23,7 @@
       "status": "CHOT",
       "source": "KE-HOACH-T043-T044, bo vai bac 1, 12/11/2026",
       "name": "Kiếm",
+      "description": "Thanh kiếm giản dị đồng hành cùng những buổi luyện tập đầu tiên.",
       "slot": "weapon",
       "tier": 1,
       "art": "kiem",
@@ -33,6 +34,7 @@
       "status": "CHOT",
       "source": "KE-HOACH-T043-T044, bo giap bac 1, 12/11/2026",
       "name": "Trường kiếm",
+      "description": "Lưỡi kiếm dài, dáng thanh thoát, nổi bật bên bộ trang phục kiếm sĩ.",
       "slot": "weapon",
       "tier": 1,
       "art": "nodachi"
@@ -42,6 +44,7 @@
       "status": "CHOT",
       "source": "KE-HOACH-T043-T044, bo vai bac 1, 12/11/2026",
       "name": "Áo vải",
+      "description": "Chiếc áo vải xanh với đường viền sáng, gọn gàng cho người mới lên đường.",
       "slot": "armor",
       "tier": 1,
       "art": "aovai",
@@ -52,6 +55,7 @@
       "status": "CHOT",
       "source": "KE-HOACH-T043-T044, bo giap bac 1, 12/11/2026",
       "name": "Giáp lá",
+      "description": "Những mảnh giáp xếp thành lớp, tạo dáng vẻ cứng cáp cho người mặc.",
       "slot": "armor",
       "tier": 1,
       "art": "giap"
@@ -61,6 +65,7 @@
       "status": "CHOT",
       "source": "KE-HOACH-T043-T044, bo vai bac 1, 12/11/2026",
       "name": "Quần vải",
+      "description": "Chiếc quần vải giản dị, đồng bộ với bộ áo thường ngày.",
       "slot": "pants",
       "tier": 1,
       "art": "vai",
@@ -71,6 +76,7 @@
       "status": "CHOT",
       "source": "KE-HOACH-T043-T044, bo giap bac 1, 12/11/2026",
       "name": "Quần xếp nếp",
+      "description": "Những nếp vải rộng tạo dáng trang phục kiếm sĩ truyền thống.",
       "slot": "pants",
       "tier": 1,
       "art": "hakama"
@@ -80,6 +86,7 @@
       "status": "DE_XUAT",
       "source": "KE-HOACH-T043-T044, o chi cong chi so, 12/11/2026",
       "name": "Nón lá",
+      "description": "Chiếc nón lá quen thuộc của người lữ hành trên những nẻo đường xa.",
       "slot": "hat",
       "tier": 1,
       "art": "non"
@@ -89,6 +96,7 @@
       "status": "DE_XUAT",
       "source": "KE-HOACH-T043-T044, o chi cong chi so, 12/11/2026",
       "name": "Mũ sắt",
+      "description": "Chiếc mũ kim loại mang dáng vẻ mộc mạc của bộ trang bị bậc đầu.",
       "slot": "hat",
       "tier": 1,
       "art": "mu"
@@ -98,6 +106,7 @@
       "status": "DE_XUAT",
       "source": "KE-HOACH-T043-T044, o chi cong chi so, 12/11/2026",
       "name": "Choàng ngắn",
+      "description": "Tấm choàng gọn phủ trên vai, điểm thêm nét riêng cho bộ trang phục.",
       "slot": "cape",
       "tier": 1,
       "art": "ngan"
@@ -107,6 +116,7 @@
       "status": "DE_XUAT",
       "source": "KE-HOACH-T043-T044, o chi cong chi so, 12/11/2026",
       "name": "Choàng dài",
+      "description": "Tấm choàng dài rủ sau lưng, mang dáng vẻ của một kiếm khách đường xa.",
       "slot": "cape",
       "tier": 1,
       "art": "dai"

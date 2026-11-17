@@ -202,12 +202,12 @@ namespace DaKiem.Client.Accounts
                 },
                 error =>
                 {
-                    if (error.error != "network")
+                    if (error.error != "network" && error.error != "content_outdated")
                     {
                         LogOutHere();
                     }
 
-                    ShowLogin(error.error == "network" ? error.message : null);
+                    ShowLogin(error.error == "network" || error.error == "content_outdated" ? error.message : null);
                 }));
         }
 
@@ -825,7 +825,7 @@ namespace DaKiem.Client.Accounts
         /// </summary>
         private void Corners(bool showTools)
         {
-            Text version = UiKit.Label(content, $"Phiên bản {Application.version}", 26, Color.white, TextAnchor.LowerLeft, style: FontStyle.Normal);
+            Text version = UiKit.Label(content, $"Phiên bản {Application.version} · Dữ liệu {Content.ContentAssets.Version}", 26, Color.white, TextAnchor.LowerLeft, style: FontStyle.Normal);
             var versionRect = (RectTransform)version.transform;
             versionRect.anchorMin = versionRect.anchorMax = versionRect.pivot = Vector2.zero;
             versionRect.sizeDelta = new Vector2(420f, 50f);

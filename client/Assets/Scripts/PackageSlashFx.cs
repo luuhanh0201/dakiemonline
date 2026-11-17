@@ -42,8 +42,8 @@ namespace DaKiem.Client
 
         public PackageSlashFx()
         {
-            slashPrefab = Resources.Load<GameObject>(Folder + SlashArt);
-            impactPrefab = Resources.Load<GameObject>(Folder + ImpactArt);
+            slashPrefab = DaKiem.Client.Content.ContentAssets.Load<GameObject>(Folder + SlashArt);
+            impactPrefab = DaKiem.Client.Content.ContentAssets.Load<GameObject>(Folder + ImpactArt);
         }
 
         public bool Available => slashPrefab != null && impactPrefab != null;

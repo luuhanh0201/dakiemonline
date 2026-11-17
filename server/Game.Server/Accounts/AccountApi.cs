@@ -24,6 +24,13 @@ public static class AccountApi
         GameServer game = app.Services.GetRequiredService<GameServer>();
         ServerConfig server = game.Server;
         RouteGroupBuilder api = app.MapGroup("/api");
+        api.AddEndpointFilter(async (context, next) =>
+        {
+            string clientRules = context.HttpContext.Request.Headers["X-Game-Rules"].ToString();
+            if (clientRules.Length > 0 && game.ContentRulesHash.Length > 0 && clientRules != game.ContentRulesHash)
+                return Results.Json(new { error = "content_outdated", message = "Dữ liệu game đã thay đổi. Đóng rồi mở lại game để cập nhật." }, statusCode: 409);
+            return await next(context);
+        });
 
         api.MapPost("/codes", (CodeRequest body, CancellationToken cancel) => Run(async () =>
             Results.Json(await accounts.SendCodeAsync(body.Purpose, body.Contact, body.Username, cancel))));

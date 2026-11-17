@@ -1,6 +1,7 @@
 {
   "version": 1,
   "id": "map.test",
+  "name": "Bãi thử",
   "status": "DE_XUAT",
   "source": "SPEC-0.5 buoc 2; vi tri, do day va kieu be mot chieu la de xuat. Cua ve nha dat o cau thang ngoi nha ve san (x 8.3), theo KICH-BAN-CAC-MAP muc 5, ban chon 13/11/2026",
   "boss": true,

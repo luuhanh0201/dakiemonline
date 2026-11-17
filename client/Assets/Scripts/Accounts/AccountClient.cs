@@ -197,6 +197,8 @@ namespace DaKiem.Client.Accounts
             {
                 request.SetRequestHeader("Authorization", "Bearer " + Token);
             }
+            if (!string.IsNullOrEmpty(Content.ContentAssets.LocalRulesHash))
+                request.SetRequestHeader("X-Game-Rules", Content.ContentAssets.LocalRulesHash);
 
             yield return request.SendWebRequest();
 

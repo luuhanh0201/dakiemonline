@@ -139,8 +139,8 @@ namespace DaKiem.Client
             heal = LoadSequence("heal", 8);
             gather = LoadSequence("gather", 4);
             wall = LoadSequence("ult", 8);
-            for (int i = 0; i < PieceCount; i++) pieces[i] = Resources.Load<Sprite>(Folder + "piece_" + i);
-            stream = Resources.Load<Sprite>(Folder + "band_1");
+            for (int i = 0; i < PieceCount; i++) pieces[i] = DaKiem.Client.Content.ContentAssets.Load<Sprite>(Folder + "piece_" + i);
+            stream = DaKiem.Client.Content.ContentAssets.Load<Sprite>(Folder + "band_1");
         }
 
         public bool Available => wave != null && column != null && stream != null && pieces[RingPiece] != null;
@@ -482,7 +482,7 @@ namespace DaKiem.Client
             var frames = new Sprite[length];
             for (int i = 0; i < length; i++)
             {
-                frames[i] = Resources.Load<Sprite>(Folder + name + "_" + i);
+                frames[i] = DaKiem.Client.Content.ContentAssets.Load<Sprite>(Folder + name + "_" + i);
                 if (frames[i] == null) return null;
             }
 

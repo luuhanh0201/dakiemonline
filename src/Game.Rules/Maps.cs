@@ -29,9 +29,27 @@ namespace Game.Rules
         public bool Walk { get; set; }
     }
 
+    /// <summary>Someone standing on a map who talks when touched; shops and quests come later.</summary>
+    public sealed class MapNpc
+    {
+        public string Id { get; set; } = string.Empty;
+
+        /// <summary>The name over the dialog, such as "Sư cô Lam".</summary>
+        public string Name { get; set; } = string.Empty;
+
+        /// <summary>Where the NPC's feet stand.</summary>
+        public double X { get; set; }
+
+        /// <summary>What the NPC says when the player walks up.</summary>
+        public string Greeting { get; set; } = string.Empty;
+    }
+
     /// <summary>One map file: its solid boxes, where players appear and the doors out of it.</summary>
     public sealed class MapConfig : ConfigEntry
     {
+        /// <summary>What the HUD calls the map, such as "Làng".</summary>
+        public string Name { get; set; } = string.Empty;
+
         public IReadOnlyList<MapBox> Boxes { get; set; } = Array.Empty<MapBox>();
 
         /// <summary>Where a player appears on this map; null means the server's spawnX.</summary>
@@ -47,6 +65,9 @@ namespace Game.Rules
         public bool Shared { get; set; }
 
         public IReadOnlyList<MapDoor> Doors { get; set; } = Array.Empty<MapDoor>();
+
+        /// <summary>The NPCs a touch walks up to and talks with; none where the file lists none.</summary>
+        public IReadOnlyList<MapNpc> Npcs { get; set; } = Array.Empty<MapNpc>();
 
         /// <summary>The straw dummies of a training yard on this map; null where there is none.</summary>
         public TrainingConfig? Training { get; set; }

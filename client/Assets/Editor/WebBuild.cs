@@ -13,11 +13,15 @@ namespace DaKiem.Client.Editor
         {
             ApplyPlayerSettings();
             AssetDatabase.SaveAssets();
+            string output = OutputPath;
+            string[] args = System.Environment.GetCommandLineArgs();
+            int outputFlag = System.Array.IndexOf(args, "-webOutput");
+            if (outputFlag >= 0 && outputFlag + 1 < args.Length) output = args[outputFlag + 1];
 
             BuildReport report = BuildPipeline.BuildPlayer(new BuildPlayerOptions
             {
                 scenes = new[] { "Assets/Scenes/SampleScene.unity" },
-                locationPathName = OutputPath,
+                locationPathName = output,
                 target = BuildTarget.WebGL,
                 options = BuildOptions.None,
             });
@@ -28,6 +32,7 @@ namespace DaKiem.Client.Editor
 
         private static void ApplyPlayerSettings()
         {
+            AppIconSettings.Apply();
             PlayerSettings.productName = "Dạ Kiếm Online";
             PlayerSettings.companyName = "Da Kiem Online";
 

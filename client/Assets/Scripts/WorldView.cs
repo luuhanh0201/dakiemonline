@@ -396,7 +396,7 @@ namespace DaKiem.Client
 
         private GameObject Place(string art, float x, float bottom, int order, bool flip)
         {
-            Sprite sprite = Resources.Load<Sprite>(art);
+            Sprite sprite = DaKiem.Client.Content.ContentAssets.Load<Sprite>(art);
             var item = new GameObject(art);
             var renderer = item.AddComponent<SpriteRenderer>();
 
@@ -542,7 +542,7 @@ namespace DaKiem.Client
 
                 for (int number = 1; ; number++)
                 {
-                    Sprite frame = Resources.Load<Sprite>($"{Folder}{prefix}{number}");
+                    Sprite frame = DaKiem.Client.Content.ContentAssets.Load<Sprite>($"{Folder}{prefix}{number}");
 
                     if (frame == null)
                     {
@@ -602,17 +602,17 @@ namespace DaKiem.Client
             {
                 for (int index = 0; index < fireFrames.Length; index++)
                 {
-                    fireFrames[index] = Resources.Load<Sprite>($"{Folder}fire_{index + 1}");
+                    fireFrames[index] = DaKiem.Client.Content.ContentAssets.Load<Sprite>($"{Folder}fire_{index + 1}");
                 }
 
                 for (int index = 0; index < smokeShapes.Length; index++)
                 {
-                    smokeShapes[index] = Resources.Load<Sprite>($"{Folder}smoke_{index + 1}");
+                    smokeShapes[index] = DaKiem.Client.Content.ContentAssets.Load<Sprite>($"{Folder}smoke_{index + 1}");
                 }
 
                 for (int index = 0; index < sparkShapes.Length; index++)
                 {
-                    sparkShapes[index] = Resources.Load<Sprite>($"{Folder}ember_{index + 1}");
+                    sparkShapes[index] = DaKiem.Client.Content.ContentAssets.Load<Sprite>($"{Folder}ember_{index + 1}");
                 }
 
                 // One scale for every frame, so a taller frame shows as a taller flame rather than shrinking.
@@ -818,7 +818,7 @@ namespace DaKiem.Client
             /// <summary>Sized by width; a height of 0 keeps the art's shape.</summary>
             private static SpriteRenderer Make(Transform parent, string art, int order, float width, float height)
             {
-                Sprite sprite = Resources.Load<Sprite>(Folder + art);
+                Sprite sprite = DaKiem.Client.Content.ContentAssets.Load<Sprite>(Folder + art);
                 var item = new GameObject($"Door {art}");
                 item.transform.SetParent(parent, false);
                 var renderer = item.AddComponent<SpriteRenderer>();

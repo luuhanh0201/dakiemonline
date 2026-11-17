@@ -26,6 +26,9 @@
 
   <ItemGroup>
     <None Include="../../config/*.json" Link="config/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Compile Include="../../client/Assets/Scripts/Accounts/AndroidReleaseInfo.cs" Link="AndroidReleaseInfo.cs" />
+    <Compile Include="../../client/Assets/Scripts/Content/ContentManifest.cs" Link="ContentManifest.cs" />
+    <Compile Include="../../client/Assets/Scripts/Content/ContentCache.cs" Link="ContentCache.cs" />
   </ItemGroup>
 
 </Project>

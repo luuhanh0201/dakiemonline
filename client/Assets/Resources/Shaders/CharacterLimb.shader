@@ -4,7 +4,7 @@ Shader "DaKiem/CharacterLimb"
     // front and top, which gives the flat drawings some volume.
     Properties
     {
-        _MainTex ("Part", 2D) = "white" {}
+        [PerRendererData] _MainTex ("Part", 2D) = "white" {}
         _Color ("Tint", Color) = (1, 1, 1, 1)
         _Dark ("Shaded side", Float) = 1
         _Light ("Lit side", Float) = 1

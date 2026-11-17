@@ -33,8 +33,8 @@ namespace DaKiem.Client
 
         public BossView()
         {
-            idle = Resources.Load<Sprite>(IdleArt);
-            attack = Resources.Load<Sprite>(AttackArt);
+            idle = DaKiem.Client.Content.ContentAssets.Load<Sprite>(IdleArt);
+            attack = DaKiem.Client.Content.ContentAssets.Load<Sprite>(AttackArt);
 
             var host = new GameObject("Boss");
             body = host.transform;

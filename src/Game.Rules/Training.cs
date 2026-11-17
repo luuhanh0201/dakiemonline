@@ -142,6 +142,8 @@ namespace Game.Rules
     {
         Clear = 0,
         Rain = 1,
+
+        /// <summary>No longer drawn: fog was taken out on 14/11/2026. The number stays so packets keep their meaning.</summary>
         Fog = 2,
         Wind = 3,
     }
@@ -152,7 +154,8 @@ namespace Game.Rules
     /// </summary>
     public sealed class WeatherState
     {
-        private static readonly Weather[] Kinds = { Weather.Clear, Weather.Rain, Weather.Fog, Weather.Wind };
+        // Fog was removed at the user's request on 14/11/2026.
+        private static readonly Weather[] Kinds = { Weather.Clear, Weather.Rain, Weather.Wind };
 
         private readonly Random random;
         private readonly int minTicks;
